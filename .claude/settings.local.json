@@ -9,7 +9,27 @@
       "Bash(git init *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "Bash(bash \"C:\\\\Users\\\\gusiy\\\\.claude\\\\plugins\\\\cache\\\\superpowers-dev\\\\superpowers\\\\6.2.0\\\\skills\\\\subagent-driven-development\\\\scripts\\\\sdd-workspace\" \"docs/superpowers/plans/2026-08-05-project-init-card-prototype.md\")",
+      "Read(//c/Users/gusiy/Downloads/**)",
+      "Read(//c/Program Files/**)",
+      "Read(//d//**)",
+      "Read(//c//**)",
+      "Bash(where godot *)",
+      "Bash(bash \"C:\\\\Users\\\\gusiy\\\\.claude\\\\plugins\\\\cache\\\\superpowers-dev\\\\superpowers\\\\6.2.0\\\\skills\\\\subagent-driven-development\\\\scripts\\\\task-brief\" \"docs/superpowers/plans/2026-08-05-project-init-card-prototype.md\" 1)",
+      "Bash(\"/d/SteamLibrary/steamapps/common/Godot Engine/godot.windows.opt.tools.64.exe\" --version)",
+      "Bash(\"/d/SteamLibrary/steamapps/common/Godot Engine/godot.windows.opt.tools.64.exe\" --headless --path \"D:/Code/1914\" --quit-after 5)",
+      "Bash(git check-ignore *)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(bash \"C:\\\\Users\\\\gusiy\\\\.claude\\\\plugins\\\\cache\\\\superpowers-dev\\\\superpowers\\\\6.2.0\\\\skills\\\\subagent-driven-development\\\\scripts\\\\review-package\" \"docs/superpowers/plans/2026-08-05-project-init-card-prototype.md\" \"7a69000938e9fbc8a885d1e3dc7044d0b085a469\" \"42db9a84c2eafe19e041eef2359aa5661d11f0c7\")",
+      "Bash(node *)",
+      "Bash(bash \"C:\\\\Users\\\\gusiy\\\\.claude\\\\plugins\\\\cache\\\\superpowers-dev\\\\superpowers\\\\6.2.0\\\\skills\\\\subagent-driven-development\\\\scripts\\\\task-brief\" \"docs/superpowers/plans/2026-08-05-project-init-card-prototype.md\" 2)",
+      "Bash(git -C /d/Code/1914 diff .claude/settings.local.json)",
+      "Bash(\"/d/SteamLibrary/steamapps/common/Godot Engine/godot.windows.opt.tools.64.exe\" --headless --path \"D:/Code/1914\" -s tmp_verify.gd)",
+      "Bash(git -C /d/Code/1914 show --stat HEAD)",
+      "Bash(git -C /d/Code/1914 status --short)",
+      "Bash(bash \"C:\\\\Users\\\\gusiy\\\\.claude\\\\plugins\\\\cache\\\\superpowers-dev\\\\superpowers\\\\6.2.0\\\\skills\\\\subagent-driven-development\\\\scripts\\\\review-package\" \"docs/superpowers/plans/2026-08-05-project-init-card-prototype.md\" \"42db9a84c2eafe19e041eef2359aa5661d11f0c7\" \"ee158d8\")",
+      "Bash(bash \"C:\\\\Users\\\\gusiy\\\\.claude\\\\plugins\\\\cache\\\\superpowers-dev\\\\superpowers\\\\6.2.0\\\\skills\\\\subagent-driven-development\\\\scripts\\\\task-brief\" \"docs/superpowers/plans/2026-08-05-project-init-card-prototype.md\" 3)"
     ]
   }
 }
