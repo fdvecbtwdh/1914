@@ -20,7 +20,9 @@ func _start_local_game() -> void:
 	if not deck_data.has("cards") or not deck_data.has("starter"):
 		printerr("[GameManager] Deck missing 'cards' or 'starter' field!")
 		return
-	var cards: Array = deck_data["cards"]
+	var raw_cards: Array = deck_data["cards"]
+	var cards: Array[String] = []
+	cards.assign(raw_cards)
 	var starter: String = deck_data["starter"]
 
 	# 获取场景根节点（Board）
@@ -48,24 +50,30 @@ func _start_local_game() -> void:
 	hand.name = "HandManager"
 	scene.add_child(hand)
 	hand.setup(turn_manager)
+	hand._board = board
 
 	# 连接 HandManager 信号 → TurnManager
 	hand.card_purchased.connect(func(card_id: String):
 		turn_manager.submit_action({"type": "purchase", "card_id": card_id})
 	)
-	hand.card_deployed.connect(func(card_id: String, _row: int, _col: int):
-		var state := turn_manager.get_state()
-		if state == null:
+	# 点击棋盘格子 → 如果有待部署的牌，部署到该格
+	board.slot_clicked.connect(func(row: int, col: int):
+		var pending := hand.get_pending_deploy_card()
+		if pending == "":
 			return
-		var player_idx := state.active_player_index
-		var deploy_row := 0 if player_idx == 0 else 4
-		turn_manager.submit_action({"type": "deploy", "card_id": card_id, "row": deploy_row, "col": 0})
+		turn_manager.submit_action({"type": "deploy", "card_id": pending, "row": row, "col": col})
+		hand.cancel_deploy()
 	)
 	hand.end_turn_pressed.connect(func():
 		turn_manager.submit_action({"type": "end_turn"})
 	)
 	hand.skip_phase_pressed.connect(func():
 		turn_manager.submit_action({"type": "skip_phase"})
+	)
+
+	# 行动阶段：移动单位
+	board.move_requested.connect(func(from_r: int, from_c: int, to_r: int, to_c: int):
+		turn_manager.submit_action({"type": "move", "from_row": from_r, "from_col": from_c, "to_row": to_r, "to_col": to_c})
 	)
 
 	# 游戏结束
