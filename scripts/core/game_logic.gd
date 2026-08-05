@@ -31,14 +31,14 @@ static func purchase_card(state: BattleState, player_idx: int, card_id: String) 
 	var new_state: BattleState = state.duplicate(true)
 	var player = new_state.players[player_idx]
 	if not player.purchase_zone.has(card_id):
-		return new_state  # 待购买区无此卡
+		return null  # 待购买区无此卡
 	if player.hand.size() >= player.hand_limit:
-		return new_state  # 手牌已满
+		return null  # 手牌已满
 	var card_data = CardDataLoader.cards.get(card_id)
 	if card_data == null:
-		return new_state
+		return null
 	if player.resources["G"] < card_data.cost_g:
-		return new_state  # G 不够
+		return null  # G 不够
 	player.resources["G"] -= card_data.cost_g
 	player.purchase_zone.erase(card_id)
 	player.hand.append(card_id)
@@ -49,20 +49,20 @@ static func deploy_unit(state: BattleState, player_idx: int, card_id: String, ro
 	var new_state: BattleState = state.duplicate(true)
 	var player = new_state.players[player_idx]
 	if not player.hand.has(card_id):
-		return new_state
+		return null
 	var card_data = CardDataLoader.cards.get(card_id)
 	if card_data == null:
-		return new_state
+		return null
 	if player.resources["Z"] < card_data.cost_k:
-		return new_state  # Z 不够
+		return null  # Z 不够
 	# 检查格子在己方后方/前线（含列越界保护）
 	if col < 0 or col >= new_state.board.cols:
-		return new_state
+		return null
 	if not _can_deploy_at(player_idx, row, col, card_data):
-		return new_state
+		return null
 	# 目标格子为空
 	if new_state.board.get_unit(row, col) != null:
-		return new_state
+		return null
 	player.resources["Z"] -= card_data.cost_k
 	player.hand.erase(card_id)
 	var unit: BattleState.UnitData = BattleState.UnitData.new()
@@ -82,29 +82,29 @@ static func move_unit(state: BattleState, player_idx: int, from_row: int, from_c
 	var new_state: BattleState = state.duplicate(true)
 	var unit := new_state.board.get_unit(from_row, from_col)
 	if unit == null or unit.owner_index != player_idx:
-		return new_state
+		return null
 	if unit.has_acted:
-		return new_state
+		return null
 	# 目标格越界保护
 	if to_row < 0 or to_row >= new_state.board.rows or to_col < 0 or to_col >= new_state.board.cols:
-		return new_state
+		return null
 	# 八方向移动一格
 	var dr = abs(to_row - from_row)
 	var dc = abs(to_col - from_col)
 	if dr > 1 or dc > 1 or (dr == 0 and dc == 0):
-		return new_state
+		return null
 	# 禁止向后方移动
 	if player_idx == 0 and to_row < from_row:
-		return new_state
+		return null
 	if player_idx == 1 and to_row > from_row:
-		return new_state
+		return null
 	# 目标格为空
 	if new_state.board.get_unit(to_row, to_col) != null:
-		return new_state
+		return null
 	# K 消耗
 	var player = new_state.players[player_idx]
 	if player.resources["K"] < 1:
-		return new_state
+		return null
 	player.resources["K"] -= 1
 	new_state.board.set_unit(from_row, from_col, null)
 	new_state.board.set_unit(to_row, to_col, unit)
@@ -118,20 +118,20 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 	var attacker := new_state.board.get_unit(from_row, from_col)
 	var defender := new_state.board.get_unit(target_row, target_col)
 	if attacker == null or defender == null:
-		return new_state
+		return null
 	if attacker.owner_index != player_idx:
-		return new_state
+		return null
 	if defender.owner_index == player_idx:
-		return new_state  # 不能打友方
+		return null  # 不能打友方
 	if attacker.has_acted:
-		return new_state
+		return null
 	# 射程检查（简化：相邻四格 + 火炮全图）
 	if not _in_attack_range(attacker, from_row, from_col, target_row, target_col):
-		return new_state
+		return null
 	# K 消耗
 	var player = new_state.players[player_idx]
 	if player.resources["K"] < 1:
-		return new_state
+		return null
 	player.resources["K"] -= 1
 
 	# 伤害计算

@@ -31,6 +31,11 @@ func submit_action(action: Dictionary) -> void:
 		action_failed.emit("不是你的回合")
 		return
 
+	# 阶段强制检查 — 只对已知操作类型检查当前阶段是否允许
+	if _is_known_type(action_type) and not _phase_allows(battle_state.phase, action_type):
+		action_failed.emit("当前阶段不允许此操作")
+		return
+
 	var new_state: BattleState = null
 
 	match action_type:
@@ -53,7 +58,7 @@ func submit_action(action: Dictionary) -> void:
 			action_failed.emit("未知操作类型: " + action_type)
 			return
 
-	if new_state == null or new_state == battle_state:
+	if new_state == null:
 		return  # 操作无效，状态未变
 
 	battle_state = new_state
@@ -76,6 +81,24 @@ func _skip_phase(state: BattleState) -> BattleState:
 		_:
 			pass
 	return ns
+
+
+func _phase_allows(phase: String, action_type: String) -> bool:
+	match phase:
+		"purchase":
+			return action_type == "purchase" or action_type == "skip_phase"
+		"deploy":
+			return action_type == "deploy" or action_type == "skip_phase"
+		"action":
+			return action_type == "move" or action_type == "attack" or action_type == "end_turn"
+		"game_over":
+			return false
+		_:
+			return false
+
+
+func _is_known_type(action_type: String) -> bool:
+	return action_type == "purchase" or action_type == "deploy" or action_type == "move" or action_type == "attack" or action_type == "end_turn" or action_type == "skip_phase"
 
 
 func get_state() -> BattleState:

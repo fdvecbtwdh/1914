@@ -11,6 +11,8 @@ signal skip_phase_pressed()
 var turn_manager: TurnManager = null
 var _purchase_buttons: Dictionary = {}   # {card_id: Button}
 var _hand_buttons: Dictionary = {}       # {card_id: Button}
+var _end_btn: Button = null
+var _skip_btn: Button = null
 var _g_label: Label = null
 var _k_label: Label = null
 var _z_label: Label = null
@@ -53,6 +55,7 @@ func _build_ui() -> void:
 	end_btn.position = Vector2(600, 10)
 	end_btn.pressed.connect(func(): end_turn_pressed.emit())
 	add_child(end_btn)
+	_end_btn = end_btn
 
 	# 跳过阶段按钮
 	var skip_btn := Button.new()
@@ -60,6 +63,7 @@ func _build_ui() -> void:
 	skip_btn.position = Vector2(600, 50)
 	skip_btn.pressed.connect(func(): skip_phase_pressed.emit())
 	add_child(skip_btn)
+	_skip_btn = skip_btn
 
 
 func _make_resource_label(pos: Vector2, text: String) -> Label:
@@ -149,17 +153,16 @@ func _make_deploy_handler(card_id: String) -> Callable:
 
 
 func _clear_dynamic_ui() -> void:
-	for btn in _purchase_buttons.values():
-		if is_instance_valid(btn):
-			btn.queue_free()
-	_purchase_buttons.clear()
-	for btn in _hand_buttons.values():
-		if is_instance_valid(btn):
-			btn.queue_free()
-	_hand_buttons.clear()
-	# 清除标题 Label（"— xxx —" 分隔线标题），遍历子节点从末尾清理，
-	# 注意：不清理 _turn_label 等持久 UI（它们文本不含 "—"）
+	# 清除所有动态 Button（dict 键可能重复覆盖但孤儿节点仍在），
+	# 只保留 _end_btn 和 _skip_btn 两个持久控制按钮，
+	# 同时清理标题 Label（"— xxx —" 分隔线）。
 	for i in range(get_child_count() - 1, -1, -1):
 		var child := get_child(i)
-		if child is Label and "—" in child.text:
+		if child is Button:
+			if child == _end_btn or child == _skip_btn:
+				continue  # 跳过持久控制按钮
 			child.queue_free()
+		elif child is Label and "—" in child.text:
+			child.queue_free()
+	_purchase_buttons.clear()
+	_hand_buttons.clear()
