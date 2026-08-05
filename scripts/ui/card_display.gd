@@ -1,4 +1,4 @@
-extends Node2D
+extends Control
 class_name CardDisplay
 
 ## 单张卡牌的显示与拖拽行为
@@ -9,12 +9,18 @@ var is_dragging: bool = false
 var drag_offset: Vector2 = Vector2.ZERO
 var original_position: Vector2 = Vector2.ZERO
 var original_parent: Node = null
+var _initialized: bool = false
 
 const CARD_SIZE: Vector2 = Vector2(80, 100)
 
 
 func setup(data: Resource) -> void:
+	if _initialized:
+		return  # 幂等保护，防止重复初始化
+	_initialized = true
 	card_data = data
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	custom_minimum_size = CARD_SIZE
 	# 用 ColorRect 临时表示卡牌外观（后续替换为正式美术）
 	var bg = ColorRect.new()
 	bg.size = CARD_SIZE
@@ -27,43 +33,46 @@ func setup(data: Resource) -> void:
 	label.position = Vector2(4, 4)
 	add_child(label)
 
+	var stats = Label.new()
+	stats.text = "%d/%d" % [data.attack, data.defense]
+	stats.add_theme_font_size_override("font_size", 10)
+	stats.position = Vector2(4, 80)
+	add_child(stats)
+
 	print("[CardDisplay] Setup: %s" % data.card_name)
 
 
-func _input(event: InputEvent) -> void:
+func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
-				_try_start_drag(event.position)
+				_start_drag(event.position)
 			else:
-				_try_end_drag(event.position)
+				_end_drag(event.position)
 	if is_dragging and event is InputEventMouseMotion:
-		global_position = event.position - drag_offset
+		global_position = get_global_mouse_position() - drag_offset
 
 
-func _try_start_drag(mouse_pos: Vector2) -> void:
-	# 检查鼠标是否在卡牌范围内
-	var card_rect = Rect2(global_position, CARD_SIZE)
-	if card_rect.has_point(mouse_pos):
-		is_dragging = true
-		original_position = global_position
-		original_parent = get_parent()
-		drag_offset = mouse_pos - global_position
-		# 提升到最顶层以便拖拽时不被遮挡
-		var root = get_tree().current_scene
-		var old_global = global_position
-		var parent = get_parent()
-		parent.remove_child(self)
-		# 如果从棋盘格子中拖出，清除格子的占用记录
-		# （parent 类型是 Resource，因内部类限制无法直接类型判断，用 has_method 检测）
-		if parent.has_method("remove_card"):
-			parent.remove_card()
-		root.add_child(self)
-		global_position = old_global
-		print("[CardDisplay] Drag start: %s" % card_data.card_name)
+func _start_drag(mouse_pos: Vector2) -> void:
+	is_dragging = true
+	original_position = global_position
+	original_parent = get_parent()
+	drag_offset = mouse_pos
+	# 提升到场景根，拖拽时不被遮挡
+	var root = get_tree().current_scene
+	var old_global = global_position
+	var parent = get_parent()
+	parent.remove_child(self)
+	# 如果从棋盘格子中拖出，清除格子的占用记录
+	# （parent 类型是 Resource，因内部类限制无法直接类型判断，用 has_method 检测）
+	if parent.has_method("remove_card"):
+		parent.remove_card()
+	root.add_child(self)
+	global_position = old_global
+	print("[CardDisplay] Drag start: %s" % card_data.card_name)
 
 
-func _try_end_drag(mouse_pos: Vector2) -> void:
+func _end_drag(mouse_pos: Vector2) -> void:
 	if not is_dragging:
 		return
 	is_dragging = false
@@ -72,7 +81,7 @@ func _try_end_drag(mouse_pos: Vector2) -> void:
 	var board_slots = get_tree().get_nodes_in_group("board_slot")
 	for slot in board_slots:
 		var slot_rect = Rect2(slot.global_position, CARD_SIZE)
-		if slot_rect.has_point(mouse_pos) and slot.can_accept_card():
+		if slot_rect.has_point(get_global_mouse_position()) and slot.can_accept_card():
 			var root = get_tree().current_scene
 			root.remove_child(self)
 			slot.place_card(self)

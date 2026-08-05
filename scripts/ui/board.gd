@@ -29,7 +29,7 @@ func _create_board() -> void:
 	print("[Board] Created %d slots" % (GRID_SIZE * GRID_SIZE))
 
 
-func spawn_card(card_data: Resource) -> Node2D:
+func spawn_card(card_data: Resource) -> Control:
 	var card_scene = load("res://scenes/ui_components/card.tscn")
 	var card = card_scene.instantiate()
 	card.setup(card_data)
@@ -53,7 +53,7 @@ func add_extra_row(is_top: bool) -> void:
 		row_idx = max_rows  # 最下方
 	# 创建新行
 	var slot_scene = load("res://scenes/ui_components/board_slot.tscn")
-	for col in range(5):
+	for col in range(GRID_SIZE):
 		var slot: BoardSlot = slot_scene.instantiate()
 		slot.slot_row = row_idx
 		slot.slot_col = col
