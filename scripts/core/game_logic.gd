@@ -58,7 +58,8 @@ static func deploy_unit(state: BattleState, player_idx: int, card_id: String, ro
 	# 检查格子在己方后方/前线（含列越界保护）
 	if col < 0 or col >= new_state.board.cols:
 		return null
-	if not _can_deploy_at(player_idx, row, col, card_data):
+	var deployable_rows: Array[int] = get_deployable_rows(new_state, player_idx, card_id)
+	if not (row in deployable_rows):
 		return null
 	# 目标格子为空
 	if new_state.board.get_unit(row, col) != null:
@@ -246,11 +247,76 @@ static func _draw_one(state: BattleState, player_idx: int) -> void:
 	player.purchase_zone.append(card_id)
 
 
-static func _can_deploy_at(player_idx: int, row: int, col: int, _card_data: Resource) -> bool:
+static func _can_deploy_at(player_idx: int, row: int, col: int, card_data: Resource) -> bool:
+	# 确认目标行在己方区域内
+	var back_row: int
+	var front_row: int
 	if player_idx == 0:
-		return row == 0 or row == 1  # P1 后方+前线
+		back_row = 0
+		front_row = 1
+		if row != 0 and row != 1:
+			return false
 	else:
-		return row == 3 or row == 4  # P2 后方+前线
+		back_row = 4
+		front_row = 3
+		if row != 3 and row != 4:
+			return false
+
+	# 检查该行是否有己方单位（"占领阵线"）
+	# 注意：_can_deploy_at 在 deploy_unit 中调用时 state 尚未修改，
+	# 但我们需要访问 board 来判断占领状态。
+	# 这里只做行列基本校验，具体规则放在 deploy_unit 中处理。
+	return true
+
+
+## 返回指定单位类型可部署的行
+static func get_deployable_rows(state: BattleState, player_idx: int, card_id: String) -> Array[int]:
+	var rows: Array[int] = []
+	var card_data: Resource = CardDataLoader.cards.get(card_id)
+	if card_data == null:
+		return rows
+
+	var back_row: int
+	var front_row: int
+	if player_idx == 0:
+		back_row = 0
+		front_row = 1
+	else:
+		back_row = 4
+		front_row = 3
+
+	var unit_class: String = card_data.unit_class
+	var back_occupied := _row_has_friendly(state, player_idx, back_row)
+	var front_occupied := _row_has_friendly(state, player_idx, front_row)
+
+	match unit_class:
+		"infantry":
+			# 后方始终可部署；占领前线后可部署到前线
+			rows.append(back_row)
+			if front_occupied:
+				rows.append(front_row)
+		"cavalry":
+			# 任意友方有占领度的阵线
+			if back_occupied:
+				rows.append(back_row)
+			if front_occupied:
+				rows.append(front_row)
+		"artillery":
+			# 只能部署在后方
+			rows.append(back_row)
+		_:
+			# 默认：后方可部署
+			rows.append(back_row)
+
+	return rows
+
+
+static func _row_has_friendly(state: BattleState, player_idx: int, row: int) -> bool:
+	for c in range(state.board.cols):
+		var unit: BattleState.UnitData = state.board.get_unit(row, c)
+		if unit != null and unit.owner_index == player_idx:
+			return true
+	return false
 
 
 static func _in_attack_range(attacker: BattleState.UnitData, from_row: int, from_col: int, target_row: int, target_col: int) -> bool:
