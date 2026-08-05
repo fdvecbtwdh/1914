@@ -1,4 +1,291 @@
-extends Node
+extends RefCounted
+class_name GameLogic
 
-## 核心游戏逻辑层 — 接收 Action，执行游戏规则，产出新的状态。
-## 本地 / 在线模式共用同一套逻辑（确定型锁步）。
+## 核心游戏逻辑 — 纯函数，无状态，无 Godot 节点依赖
+## 每个方法接收 BattleState，深拷贝后修改并返回新 state
+
+
+static func init_game(p1_deck: Array[String], p2_deck: Array[String], p1_starter: String, p2_starter: String) -> BattleState:
+	var state := BattleState.new()
+	state.setup(p1_deck, p2_deck, p1_starter, p2_starter)
+	# 洗牌
+	_shuffle_deck(state.players[0].deck)
+	_shuffle_deck(state.players[1].deck)
+	# 初始抽 3 张
+	for i in range(3):
+		_draw_one(state, 0)
+		_draw_one(state, 1)
+	# 首发牌加入购买区
+	state.players[0].purchase_zone.append(state.players[0].starter_card_id)
+	state.players[1].purchase_zone.append(state.players[1].starter_card_id)
+	return state
+
+
+static func draw_card(state: BattleState, player_idx: int) -> BattleState:
+	var new_state: BattleState = state.duplicate(true)
+	_draw_one(new_state, player_idx)
+	return new_state
+
+
+static func purchase_card(state: BattleState, player_idx: int, card_id: String) -> BattleState:
+	var new_state: BattleState = state.duplicate(true)
+	var player = new_state.players[player_idx]
+	if not player.purchase_zone.has(card_id):
+		return new_state  # 待购买区无此卡
+	if player.hand.size() >= player.hand_limit:
+		return new_state  # 手牌已满
+	var card_data = CardDataLoader.cards.get(card_id)
+	if card_data == null:
+		return new_state
+	if player.resources["G"] < card_data.cost_g:
+		return new_state  # G 不够
+	player.resources["G"] -= card_data.cost_g
+	player.purchase_zone.erase(card_id)
+	player.hand.append(card_id)
+	return new_state
+
+
+static func deploy_unit(state: BattleState, player_idx: int, card_id: String, row: int, col: int) -> BattleState:
+	var new_state: BattleState = state.duplicate(true)
+	var player = new_state.players[player_idx]
+	if not player.hand.has(card_id):
+		return new_state
+	var card_data = CardDataLoader.cards.get(card_id)
+	if card_data == null:
+		return new_state
+	if player.resources["Z"] < card_data.cost_k:
+		return new_state  # Z 不够
+	# 检查格子在己方后方/前线（含列越界保护）
+	if col < 0 or col >= new_state.board.cols:
+		return new_state
+	if not _can_deploy_at(player_idx, row, col, card_data):
+		return new_state
+	# 目标格子为空
+	if new_state.board.get_unit(row, col) != null:
+		return new_state
+	player.resources["Z"] -= card_data.cost_k
+	player.hand.erase(card_id)
+	var unit: BattleState.UnitData = BattleState.UnitData.new()
+	unit.card_id = card_id
+	unit.owner_index = player_idx
+	unit.attack = card_data.attack
+	unit.defense = card_data.defense
+	unit.max_defense = card_data.defense
+	unit.abilities = card_data.abilities.duplicate()
+	unit.deployed_this_turn = true
+	new_state.board.set_unit(row, col, unit)
+	new_state.action_log.append({"type": "deploy", "player": player_idx, "card_id": card_id, "row": row, "col": col})
+	return new_state
+
+
+static func move_unit(state: BattleState, player_idx: int, from_row: int, from_col: int, to_row: int, to_col: int) -> BattleState:
+	var new_state: BattleState = state.duplicate(true)
+	var unit := new_state.board.get_unit(from_row, from_col)
+	if unit == null or unit.owner_index != player_idx:
+		return new_state
+	if unit.has_acted:
+		return new_state
+	# 目标格越界保护
+	if to_row < 0 or to_row >= new_state.board.rows or to_col < 0 or to_col >= new_state.board.cols:
+		return new_state
+	# 八方向移动一格
+	var dr = abs(to_row - from_row)
+	var dc = abs(to_col - from_col)
+	if dr > 1 or dc > 1 or (dr == 0 and dc == 0):
+		return new_state
+	# 禁止向后方移动
+	if player_idx == 0 and to_row < from_row:
+		return new_state
+	if player_idx == 1 and to_row > from_row:
+		return new_state
+	# 目标格为空
+	if new_state.board.get_unit(to_row, to_col) != null:
+		return new_state
+	# K 消耗
+	var player = new_state.players[player_idx]
+	if player.resources["K"] < 1:
+		return new_state
+	player.resources["K"] -= 1
+	new_state.board.set_unit(from_row, from_col, null)
+	new_state.board.set_unit(to_row, to_col, unit)
+	unit.has_acted = true
+	new_state.action_log.append({"type": "move", "player": player_idx, "from": [from_row, from_col], "to": [to_row, to_col]})
+	return new_state
+
+
+static func attack_unit(state: BattleState, player_idx: int, from_row: int, from_col: int, target_row: int, target_col: int) -> BattleState:
+	var new_state: BattleState = state.duplicate(true)
+	var attacker := new_state.board.get_unit(from_row, from_col)
+	var defender := new_state.board.get_unit(target_row, target_col)
+	if attacker == null or defender == null:
+		return new_state
+	if attacker.owner_index != player_idx:
+		return new_state
+	if defender.owner_index == player_idx:
+		return new_state  # 不能打友方
+	if attacker.has_acted:
+		return new_state
+	# 射程检查（简化：相邻四格 + 火炮全图）
+	if not _in_attack_range(attacker, from_row, from_col, target_row, target_col):
+		return new_state
+	# K 消耗
+	var player = new_state.players[player_idx]
+	if player.resources["K"] < 1:
+		return new_state
+	player.resources["K"] -= 1
+
+	# 伤害计算
+	var damage := attacker.attack
+	# 防守方坚守词条减伤
+	if defender.abilities.has("坚守"):
+		var firm_level := 1  # 默认坚守1
+		# 坦克坚守上限4由 CardData 设定，这里统一取1
+		damage = max(1, damage - firm_level)
+	# 施加伤害
+	defender.defense -= damage
+
+	# 战斗记录
+	new_state.action_log.append({"type": "attack", "player": player_idx, "from": [from_row, from_col], "to": [target_row, target_col], "damage": damage})
+
+	# 是否消灭
+	if defender.defense <= 0:
+		var card_data = CardDataLoader.cards.get(defender.card_id)
+		var reward_g := 0
+		if card_data != null:
+			reward_g = int(card_data.cost_g * 0.25)
+		# 收缴词条：50%
+		if attacker.abilities.has("收缴"):
+			reward_g = int(card_data.cost_g * 0.50) if card_data != null else 0
+		player.resources["G"] += reward_g
+		new_state.board.set_unit(target_row, target_col, null)
+		new_state.action_log.append({"type": "destroy", "card_id": defender.card_id, "reward_g": reward_g})
+	else:
+		# 反击（攻击者未被消灭时）
+		_counter_attack(attacker, defender, from_row, from_col, target_row, target_col, new_state)
+
+	attacker.has_acted = true
+	return new_state
+
+
+static func start_turn(state: BattleState) -> BattleState:
+	var new_state: BattleState = state.duplicate(true)
+	var player = new_state.players[new_state.active_player_index]
+	# G +150
+	player.resources["G"] += 150
+	# K = 回合数, Z = 回合数
+	player.resources["K"] = new_state.turn
+	player.resources["Z"] = new_state.turn
+	# 抽 1 张
+	_draw_one(new_state, new_state.active_player_index)
+	# 重置单位行动标记
+	for r in range(new_state.board.rows):
+		for c in range(new_state.board.cols):
+			var unit := new_state.board.get_unit(r, c)
+			if unit != null and unit.owner_index == new_state.active_player_index:
+				unit.has_acted = false
+				unit.deployed_this_turn = false
+	new_state.phase = "purchase"
+	return new_state
+
+
+static func end_turn(state: BattleState) -> BattleState:
+	var new_state: BattleState = state.duplicate(true)
+	# 清空 K/Z
+	new_state.players[new_state.active_player_index].resources["K"] = 0
+	new_state.players[new_state.active_player_index].resources["Z"] = 0
+	# 检测胜利
+	var result := check_victory(new_state)
+	if result != -1:
+		new_state.winner = result
+		new_state.phase = "game_over"
+		return new_state
+	# 切换玩家
+	new_state.active_player_index = 1 - new_state.active_player_index
+	if new_state.active_player_index == 0:
+		new_state.turn += 1
+	new_state.phase = "draw"
+	return new_state
+
+
+static func check_victory(state: BattleState) -> int:
+	# 占领对方全部5条阵线（每列至少一个己方单位在敌方区域内）
+	# P1 胜：P1 单位在 P2 区域（行3-4）每列都有
+	var p1_cols := {}
+	var p2_cols := {}
+	for r in range(state.board.rows):
+		for c in range(state.board.cols):
+			var unit := state.board.get_unit(r, c)
+			if unit == null:
+				continue
+			if unit.owner_index == 0 and r >= 3:
+				p1_cols[c] = true
+			elif unit.owner_index == 1 and r <= 1:
+				p2_cols[c] = true
+	if p1_cols.size() == state.board.cols:
+		return 0
+	if p2_cols.size() == state.board.cols:
+		return 1
+	return -1
+
+
+static func _shuffle_deck(deck: Array) -> void:
+	var n := deck.size()
+	while n > 1:
+		n -= 1
+		var k := randi() % (n + 1)
+		var tmp = deck[k]
+		deck[k] = deck[n]
+		deck[n] = tmp
+
+
+static func _draw_one(state: BattleState, player_idx: int) -> void:
+	var player = state.players[player_idx]
+	if player.deck.is_empty():
+		return
+	var card_id: String = player.deck.pop_front()
+	player.purchase_zone.append(card_id)
+
+
+static func _can_deploy_at(player_idx: int, row: int, col: int, _card_data: Resource) -> bool:
+	if player_idx == 0:
+		return row == 0 or row == 1  # P1 后方+前线
+	else:
+		return row == 3 or row == 4  # P2 后方+前线
+
+
+static func _in_attack_range(attacker: BattleState.UnitData, from_row: int, from_col: int, target_row: int, target_col: int) -> bool:
+	var card_data = CardDataLoader.cards.get(attacker.card_id)
+	if card_data == null:
+		return false
+	var range_str: String = card_data.attack_range
+	var dr = abs(target_row - from_row)
+	var dc = abs(target_col - from_col)
+	match range_str:
+		"adjacent_4":
+			return dr <= 1 and dc <= 1 and not (dr == 0 and dc == 0)
+		"global":
+			return true
+		_:
+			return dr <= 1 and dc <= 1 and not (dr == 0 and dc == 0)
+
+
+static func _counter_attack(attacker: BattleState.UnitData, defender: BattleState.UnitData, atk_row: int, atk_col: int, def_row: int, def_col: int, state: BattleState) -> void:
+	# 攻击者有"突击" + 首次攻击 → 免反击
+	if attacker.abilities.has("突击") and attacker.deployed_this_turn:
+		return
+	# 攻击者有"冲锋" + 首次攻击 → 免反击（此处用 deployed_this_turn 近似）
+	if attacker.abilities.has("冲锋") and attacker.deployed_this_turn:
+		return
+	# 火炮不可被反击
+	var attacker_card = CardDataLoader.cards.get(attacker.card_id)
+	if attacker_card != null and attacker_card.unit_class == "artillery":
+		return
+	# 防守方反击
+	var counter_dmg := defender.attack
+	if attacker.abilities.has("坚守"):
+		counter_dmg = max(1, counter_dmg - 1)
+	attacker.defense -= counter_dmg
+	state.action_log.append({"type": "counter", "damage": counter_dmg})
+	if attacker.defense <= 0:
+		state.board.set_unit(atk_row, atk_col, null)
+		state.action_log.append({"type": "destroy", "card_id": attacker.card_id, "reward_g": 0})
