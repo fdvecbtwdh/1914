@@ -33,11 +33,20 @@ func setup(data: Resource) -> void:
 	label.position = Vector2(4, 4)
 	add_child(label)
 
-	var stats = Label.new()
-	stats.text = "%d/%d" % [data.attack, data.defense]
-	stats.add_theme_font_size_override("font_size", 10)
-	stats.position = Vector2(4, 80)
-	add_child(stats)
+	# 攻击力 — 左下
+	var atk_label = Label.new()
+	atk_label.text = str(data.attack)
+	atk_label.add_theme_font_size_override("font_size", 11)
+	atk_label.position = Vector2(6, 80)
+	add_child(atk_label)
+
+	# 防御力 — 右下
+	var def_label = Label.new()
+	def_label.text = str(data.defense)
+	def_label.add_theme_font_size_override("font_size", 11)
+	def_label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4, 1.0))
+	def_label.position = Vector2(CARD_SIZE.x - 18, 80)
+	add_child(def_label)
 
 	print("[CardDisplay] Setup: %s" % data.card_name)
 
@@ -64,7 +73,6 @@ func _start_drag(mouse_pos: Vector2) -> void:
 	var parent = get_parent()
 	parent.remove_child(self)
 	# 如果从棋盘格子中拖出，清除格子的占用记录
-	# （parent 类型是 Resource，因内部类限制无法直接类型判断，用 has_method 检测）
 	if parent.has_method("remove_card"):
 		parent.remove_card()
 	root.add_child(self)

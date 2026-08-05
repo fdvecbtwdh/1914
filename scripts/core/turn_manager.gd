@@ -77,7 +77,11 @@ func _skip_phase(state: BattleState) -> BattleState:
 		"deploy":
 			ns.phase = "action"
 		"action":
-			pass  # 用 end_turn 跳过
+			# action 之后自动结束回合
+			ns = GameLogic.end_turn(ns)
+			if ns.winner == -1:
+				ns = GameLogic.start_turn(ns)
+			return ns
 		_:
 			pass
 	return ns
@@ -90,7 +94,7 @@ func _phase_allows(phase: String, action_type: String) -> bool:
 		"deploy":
 			return action_type == "deploy" or action_type == "skip_phase"
 		"action":
-			return action_type == "move" or action_type == "attack" or action_type == "end_turn"
+			return action_type == "move" or action_type == "attack" or action_type == "end_turn" or action_type == "skip_phase"
 		"game_over":
 			return false
 		_:

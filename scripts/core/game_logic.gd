@@ -54,14 +54,12 @@ static func deploy_unit(state: BattleState, player_idx: int, card_id: String, ro
 	if card_data == null:
 		return null
 	if player.resources["Z"] < card_data.cost_k:
-		return null  # Z 不够
-	# 检查格子在己方后方/前线（含列越界保护）
+		return null
 	if col < 0 or col >= new_state.board.cols:
 		return null
 	var deployable_rows: Array[int] = get_deployable_rows(new_state, player_idx, card_id)
 	if not (row in deployable_rows):
 		return null
-	# 目标格子为空
 	if new_state.board.get_unit(row, col) != null:
 		return null
 	player.resources["Z"] -= card_data.cost_k
@@ -136,7 +134,7 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 	player.resources["K"] -= 1
 
 	# 伤害计算
-	var damage := attacker.attack
+	var damage: int = attacker.attack
 	# 防守方坚守词条减伤
 	if defender.abilities.has("坚守"):
 		var firm_level := 1  # 默认坚守1
@@ -296,9 +294,8 @@ static func get_deployable_rows(state: BattleState, player_idx: int, card_id: St
 			if front_occupied:
 				rows.append(front_row)
 		"cavalry":
-			# 任意友方有占领度的阵线
-			if back_occupied:
-				rows.append(back_row)
+			# 底线始终可部署 + 占领前线后可部署到前线
+			rows.append(back_row)
 			if front_occupied:
 				rows.append(front_row)
 		"artillery":
