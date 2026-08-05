@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(godot --version)",
+      "Bash(winget search *)",
+      "Bash(scoop list *)",
+      "Bash(choco list *)",
+      "Read(//c/Users/gusiy/.claude/plugins/cache/superpowers-dev/superpowers/6.2.0/skills/subagent-driven-development/scripts/**)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git config *)"
+    ]
+  }
+}
