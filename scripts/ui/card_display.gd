@@ -52,7 +52,12 @@ func _try_start_drag(mouse_pos: Vector2) -> void:
 		# 提升到最顶层以便拖拽时不被遮挡
 		var root = get_tree().current_scene
 		var old_global = global_position
-		get_parent().remove_child(self)
+		var parent = get_parent()
+		parent.remove_child(self)
+		# 如果从棋盘格子中拖出，清除格子的占用记录
+		# （parent 类型是 Resource，因内部类限制无法直接类型判断，用 has_method 检测）
+		if parent.has_method("remove_card"):
+			parent.remove_card()
 		root.add_child(self)
 		global_position = old_global
 		print("[CardDisplay] Drag start: %s" % card_data.card_name)
