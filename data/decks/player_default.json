@@ -1,0 +1,9 @@
+{
+  "name": "默认卡组",
+  "starter": "infantry_01",
+  "cards": [
+    "infantry_01", "infantry_01", "infantry_01",
+    "cavalry_01", "cavalry_01", "cavalry_01",
+    "artillery_01", "artillery_01", "artillery_01"
+  ]
+}

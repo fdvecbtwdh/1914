@@ -6,7 +6,7 @@ class_name BoardSlot
 @export var slot_row: int = 0
 @export var slot_col: int = 0
 
-var occupied_card: Node2D = null
+var occupied_card: Control = null
 
 
 func _ready() -> void:
@@ -17,7 +17,7 @@ func can_accept_card() -> bool:
 	return occupied_card == null
 
 
-func place_card(card: Node2D) -> void:
+func place_card(card: Control) -> void:
 	occupied_card = card
 	card.position = Vector2.ZERO
 	add_child(card)
