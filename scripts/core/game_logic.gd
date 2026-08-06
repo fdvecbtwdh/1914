@@ -87,8 +87,8 @@ static func deploy_unit(state: BattleState, player_idx: int, card_id: String, ro
 
 
 static func move_unit(state: BattleState, player_idx: int, from_row: int, from_col: int, to_row: int, to_col: int) -> BattleState:
-	var new_state := state.duplicate(true)
-	var unit := new_state.board.get_unit(from_row, from_col)
+	var new_state: BattleState = state.duplicate(true)
+	var unit: BattleState.UnitData = new_state.board.get_unit(from_row, from_col)
 	if unit == null or unit.owner_index != player_idx:
 		return new_state
 
@@ -107,8 +107,8 @@ static func move_unit(state: BattleState, player_idx: int, from_row: int, from_c
 		return new_state
 
 	# 八方向移动一格
-	var dr := abs(to_row - from_row)
-	var dc := abs(to_col - from_col)
+	var dr: int = abs(to_row - from_row)
+	var dc: int = abs(to_col - from_col)
 	if dr > 1 or dc > 1 or (dr == 0 and dc == 0):
 		return new_state
 
@@ -141,8 +141,8 @@ static func move_unit(state: BattleState, player_idx: int, from_row: int, from_c
 
 static func attack_unit(state: BattleState, player_idx: int, from_row: int, from_col: int, target_row: int, target_col: int) -> BattleState:
 	var new_state: BattleState = state.duplicate(true)
-	var attacker := new_state.board.get_unit(from_row, from_col)
-	var defender := new_state.board.get_unit(target_row, target_col)
+	var attacker: BattleState.UnitData = new_state.board.get_unit(from_row, from_col)
+	var defender: BattleState.UnitData = new_state.board.get_unit(target_row, target_col)
 	if attacker == null or defender == null:
 		return null
 	if attacker.owner_index != player_idx:
@@ -156,8 +156,8 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 	if not _in_attack_range(attacker, from_row, from_col, target_row, target_col):
 		return null
 	# Phase 3: 空战规则 — 陆军不能攻击空军
-	var attacker_card := CardDataLoader.cards.get(attacker.card_id)
-	var defender_card := CardDataLoader.cards.get(defender.card_id)
+	var attacker_card: Resource = CardDataLoader.cards.get(attacker.card_id)
+	var defender_card: Resource = CardDataLoader.cards.get(defender.card_id)
 	if attacker_card != null and defender_card != null:
 		var atk_is_air := _is_air_unit(attacker_card.unit_class)
 		var def_is_air := _is_air_unit(defender_card.unit_class)
@@ -178,7 +178,7 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 	var actual_col: int = target_col
 	if defender.is_guarded:
 		var guard_pos: Vector2i = defender.guarded_by
-		var guard_unit := new_state.board.get_unit(guard_pos.x, guard_pos.y)
+		var guard_unit: BattleState.UnitData = new_state.board.get_unit(guard_pos.x, guard_pos.y)
 		if guard_unit != null and guard_unit.owner_index == defender.owner_index:
 			defender = guard_unit  # 攻击目标改为守护单位
 			actual_row = guard_pos.x
@@ -198,7 +198,7 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 	# 是否消灭
 	if defender.defense <= 0:
 		var card_data = CardDataLoader.cards.get(defender.card_id)
-		var reward_g := 0
+		var reward_g: int = 0
 		if card_data != null:
 			reward_g = int(card_data.cost_g * 0.25)
 		# 收缴词条：50%
@@ -231,7 +231,7 @@ static func start_turn(state: BattleState) -> BattleState:
 	# 重置单位行动标记（Phase 3 扩展：同时重置 has_attacked, move_count）
 	for r in range(new_state.board.rows):
 		for c in range(new_state.board.cols):
-			var unit := new_state.board.get_unit(r, c)
+			var unit: BattleState.UnitData = new_state.board.get_unit(r, c)
 			if unit != null and unit.owner_index == new_state.active_player_index:
 				unit.has_acted = false
 				unit.has_attacked = false
@@ -270,7 +270,7 @@ static func check_victory(state: BattleState) -> int:
 	var p2_cols := {}
 	for r in range(state.board.rows):
 		for c in range(state.board.cols):
-			var unit := state.board.get_unit(r, c)
+			var unit: BattleState.UnitData = state.board.get_unit(r, c)
 			if unit == null:
 				continue
 			if unit.owner_index == 0 and r >= 3:
@@ -289,16 +289,16 @@ static func check_victory(state: BattleState) -> int:
 ## 后手 (player_idx=1): 2 + 2×(turn−1) → 2, 4, 6, 8, ...
 ## 上限 25
 static func _calc_z(player_idx: int, turn: int) -> int:
-	var base := 1 if player_idx == 0 else 2
-	var z := base + 2 * (turn - 1)
+	var base: int = 1 if player_idx == 0 else 2
+	var z: int = base + 2 * (turn - 1)
 	return min(z, 25)
 
 
 static func _shuffle_deck(deck: Array) -> void:
-	var n := deck.size()
+	var n: int = deck.size()
 	while n > 1:
 		n -= 1
-		var k := randi() % (n + 1)
+		var k: int = randi() % (n + 1)
 		var tmp = deck[k]
 		deck[k] = deck[n]
 		deck[n] = tmp
@@ -412,8 +412,8 @@ static func _counter_attack(attacker: BattleState.UnitData, defender: BattleStat
 		return
 
 	# Phase 3: 空战反击规则
-	var attacker_card := CardDataLoader.cards.get(attacker.card_id)
-	var defender_card := CardDataLoader.cards.get(defender.card_id)
+	var attacker_card: Resource = CardDataLoader.cards.get(attacker.card_id)
+	var defender_card: Resource = CardDataLoader.cards.get(defender.card_id)
 	if attacker_card != null and defender_card != null:
 		# 火炮不可被反击（Phase 2 规则，保留）
 		if attacker_card.unit_class == "artillery":
@@ -432,7 +432,7 @@ static func _counter_attack(attacker: BattleState.UnitData, defender: BattleStat
 				return
 
 	# 防守方反击
-	var counter_dmg := defender.attack
+	var counter_dmg: int = defender.attack
 	# 坚守减伤（Phase 3: 使用 firm_level 替代固定值）
 	if attacker.firm_level > 0:
 		counter_dmg = max(1, counter_dmg - attacker.firm_level)
@@ -503,7 +503,7 @@ static func _apply_guard(state: BattleState, unit: BattleState.UnitData) -> void
 				continue
 			var nr := row + dr
 			var nc := col + dc
-			var neighbor := state.board.get_unit(nr, nc)
+			var neighbor: BattleState.UnitData = state.board.get_unit(nr, nc)
 			if neighbor != null and neighbor.owner_index == unit.owner_index:
 				neighbor.is_guarded = true
 				neighbor.guarded_by = Vector2i(row, col)
@@ -513,7 +513,7 @@ static func _apply_guard(state: BattleState, unit: BattleState.UnitData) -> void
 static func _clear_guard(state: BattleState, unit: BattleState.UnitData) -> void:
 	for r in range(state.board.rows):
 		for c in range(state.board.cols):
-			var other := state.board.get_unit(r, c)
+			var other: BattleState.UnitData = state.board.get_unit(r, c)
 			if other != null and other.guarded_by == Vector2i(unit.row, unit.col):
 				other.is_guarded = false
 				other.guarded_by = Vector2i(-1, -1)
@@ -525,10 +525,10 @@ static func _clear_guard(state: BattleState, unit: BattleState.UnitData) -> void
 ## 视野范围判定（与攻击范围判定分开）
 static func _in_vision_range(vision_str: String, from_row: int, from_col: int, to_row: int, to_col: int, owner_idx: int) -> bool:
 	var dr := to_row - from_row  # 带符号的方向
-	var adr := abs(dr)
-	var adc := abs(to_col - from_col)
+	var adr: int = abs(dr)
+	var adc: int = abs(to_col - from_col)
 	# 确定"前方"方向：P1(owner=0) 前方是行号增大，P2(owner=1) 前方是行号减小
-	var forward_dr := dr if owner_idx == 0 else -dr
+	var forward_dr: int = dr if owner_idx == 0 else -dr
 	match vision_str:
 		"adjacent_4":
 			return (adr + adc) == 1  # 仅上下左右
@@ -562,7 +562,7 @@ static func _in_vision_range(vision_str: String, from_row: int, from_col: int, t
 static func _apply_supply(state: BattleState, player_idx: int) -> void:
 	for r in range(state.board.rows):
 		for c in range(state.board.cols):
-			var unit := state.board.get_unit(r, c)
+			var unit: BattleState.UnitData = state.board.get_unit(r, c)
 			if unit == null or unit.owner_index != player_idx:
 				continue
 			if unit.supply_level <= 0:
@@ -572,7 +572,7 @@ static func _apply_supply(state: BattleState, player_idx: int) -> void:
 				for dc in range(-1, 2):
 					if dr == 0 and dc == 0:
 						continue
-					var neighbor := state.board.get_unit(r + dr, c + dc)
+					var neighbor: BattleState.UnitData = state.board.get_unit(r + dr, c + dc)
 					if neighbor != null and neighbor.owner_index == player_idx and neighbor.defense < neighbor.max_defense:
 						neighbor.defense = min(neighbor.max_defense, neighbor.defense + unit.supply_level)
 						state.action_log.append({"type": "supply", "from": [r, c], "to": [r + dr, c + dc], "amount": unit.supply_level})
@@ -583,7 +583,7 @@ static func _apply_supply(state: BattleState, player_idx: int) -> void:
 static func _apply_rear_repair(state: BattleState, player_idx: int) -> void:
 	var rear_row := 0 if player_idx == 0 else state.board.rows - 1
 	for c in range(state.board.cols):
-		var unit := state.board.get_unit(rear_row, c)
+		var unit: BattleState.UnitData = state.board.get_unit(rear_row, c)
 		if unit != null and unit.owner_index == player_idx and unit.defense < unit.max_defense:
 			unit.defense = min(unit.max_defense, unit.defense + 1)
 			state.action_log.append({"type": "rear_repair", "row": rear_row, "col": c})
@@ -597,7 +597,7 @@ static func _apply_rear_repair(state: BattleState, player_idx: int) -> void:
 static func _update_stealth_reveal(state: BattleState) -> void:
 	for r in range(state.board.rows):
 		for c in range(state.board.cols):
-			var unit := state.board.get_unit(r, c)
+			var unit: BattleState.UnitData = state.board.get_unit(r, c)
 			if unit == null or not unit.stealthed:
 				continue
 			unit.revealed = false
@@ -605,10 +605,10 @@ static func _update_stealth_reveal(state: BattleState) -> void:
 			# 检查是否有敌方步兵/战斗机能看到此位置
 			for er in range(state.board.rows):
 				for ec in range(state.board.cols):
-					var enemy := state.board.get_unit(er, ec)
+					var enemy: BattleState.UnitData = state.board.get_unit(er, ec)
 					if enemy == null or enemy.owner_index != enemy_idx:
 						continue
-					var enemy_card := CardDataLoader.cards.get(enemy.card_id)
+					var enemy_card: Resource = CardDataLoader.cards.get(enemy.card_id)
 					if enemy_card == null:
 						continue
 					# 步兵或战斗机能发现潜行单位
