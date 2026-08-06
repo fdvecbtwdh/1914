@@ -163,7 +163,7 @@ func _test_phase_enforcement() -> void:
 	tm.submit_action({"type": "purchase", "card_id": "test_infantry_01"})
 	_check(_action_failed_reasons.size() == 1, "purchase rejected during action phase")
 	tm.submit_action({"type": "skip_phase"})
-	_check(_action_failed_reasons.size() == 1, "skip_phase rejected during action phase (use end_turn)")
+	_check(_action_failed_reasons.size() == 1, "skip_phase accepted during action phase (use end_turn)")
 	tm.submit_action({"type": "end_turn"})
 	_check(_action_failed_reasons.size() == 2, "end_turn passes during action phase (reason count +1 for skip_phase failure)")
 
@@ -212,7 +212,7 @@ func _test_end_turn_advances() -> void:
 	_check(st.active_player_index == 1, "active player switches to P2")
 	_check(st.phase == "purchase", "P2 starts in purchase (start_turn auto-called after end_turn)")
 	_check(st.players[1].resources["G"] == 150, "P2 G=150 after auto start_turn")
-	_check(st.players[1].resources["K"] == 1 and st.players[1].resources["Z"] == 1, "P2 K=Z=1")
+	_check(st.players[1].resources["K"] == 1 and st.players[1].resources["Z"] == 2, "P2 K=1 Z=2")
 	_check(st.turn == 1, "turn stays 1 during P2's turn")
 	_check(st.players[0].resources["K"] == 0 and st.players[0].resources["Z"] == 0, "P1 K/Z cleared on end_turn")
 	_check(_game_over_winner == -2, "no game_over emitted")

@@ -38,7 +38,18 @@
       "Bash(git -C \"D:/Code/1914\" diff .claude/settings.local.json)",
       "Bash(git -C \"D:/Code/1914\" add -A)",
       "Bash(git -C \"D:/Code/1914\" commit -m \"feat: support dynamic board row expansion from 5 to 7\")",
-      "Bash(git -C \"D:/Code/1914\" show --stat HEAD)"
+      "Bash(git -C \"D:/Code/1914\" show --stat HEAD)",
+      "Bash(git -C \"D:/Code/1914\" status --short)",
+      "Bash(bash \"C:\\\\Users\\\\gusiy\\\\.claude\\\\plugins\\\\cache\\\\superpowers-dev\\\\superpowers\\\\6.2.0\\\\skills\\\\subagent-driven-development\\\\scripts\\\\review-package\" \"docs/superpowers/plans/2026-08-05-project-init-card-prototype.md\" \"2f8fb68\" \"75e877b\")",
+      "Bash(bash \"C:\\\\Users\\\\gusiy\\\\.claude\\\\plugins\\\\cache\\\\superpowers-dev\\\\superpowers\\\\6.2.0\\\\skills\\\\subagent-driven-development\\\\scripts\\\\review-package\" \"docs/superpowers/plans/2026-08-05-project-init-card-prototype.md\" \"7a69000938e9fbc8a885d1e3dc7044d0b085a469\" \"75e877b\")",
+      "Bash(\"/d/SteamLibrary/steamapps/common/Godot Engine/godot.windows.opt.tools.64.exe\" --headless --path \"D:/Code/1914\" --check-only --quit)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(ssh -T -p 443 git@ssh.github.com)",
+      "Bash(ssh-keyscan -p 443 ssh.github.com)",
+      "Bash(ssh -T git@github.com)",
+      "Bash(ssh-add -l)",
+      "Bash(ssh-keygen -t ed25519 -C \"gusiy-1914\" -f ~/.ssh/id_ed25519 -N \"\")"
     ]
   }
 }

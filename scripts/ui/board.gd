@@ -375,8 +375,18 @@ func _select_unit(row: int, col: int) -> void:
 		return
 	if unit.owner_index != state.active_player_index:
 		return
-	if unit.has_acted:
-		return
+	# Standard units (move or attack once): blocked by has_acted
+	if unit.move_limit <= 1 and not unit.can_move_after_attack:
+		if unit.has_acted:
+			return
+	# Air units: blocked only when BOTH actions used
+	elif unit.can_move_after_attack and unit.move_limit <= 1:
+		if unit.has_attacked and unit.move_count >= unit.move_limit:
+			return
+	# Tank: blocked only when no moves remain AND already attacked
+	else:
+		if unit.move_count >= unit.move_limit and unit.has_attacked:
+			return
 	_selected_unit_pos = Vector2i(row, col)
 	# 金色高亮选中单位（slot 层）
 	for slot in get_tree().get_nodes_in_group("board_slot"):
@@ -466,6 +476,10 @@ func _get_valid_attack_targets(from_row: int, from_col: int, state: BattleState)
 			match range_str:
 				"adjacent_4":
 					in_range = dr <= 1 and dc <= 1 and not (dr == 0 and dc == 0)
+				"adjacent_8":
+					in_range = dr <= 1 and dc <= 1 and not (dr == 0 and dc == 0)
+				"column_and_neighbors":
+					in_range = abs(col - from_col) <= 1 and not (dr == 0 and dc == 0)
 				"global":
 					in_range = true
 				_:
