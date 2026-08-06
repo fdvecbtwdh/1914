@@ -95,6 +95,10 @@ static func move_unit(state: BattleState, player_idx: int, from_row: int, from_c
 		if unit.has_acted:
 			return new_state
 
+	# 目标格越界保护
+	if to_row < 0 or to_row >= new_state.board.rows or to_col < 0 or to_col >= new_state.board.cols:
+		return new_state
+
 	# 八方向移动一格
 	var dr := abs(to_row - from_row)
 	var dc := abs(to_col - from_col)
@@ -422,8 +426,8 @@ static func _init_unit_from_card(unit: BattleState.UnitData, card_data: Resource
 			unit.can_move_after_attack = true
 		"fighter", "bomber":
 			unit.move_limit = 1
-			unit.can_move_after_attack = false
-			# 空军：移动和攻击各一次（由 has_acted + has_attacked 分开控制）
+			unit.can_move_after_attack = true
+			# 空军：移动和攻击各一次独立（move_limit 限移动一次，has_attacked 限攻击一次）
 		_:
 			unit.move_limit = 1
 			unit.can_move_after_attack = false
