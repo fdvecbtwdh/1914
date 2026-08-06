@@ -14,10 +14,12 @@ const PANEL_GAP: float = 20.0
 ## 高亮颜色
 const HIGHLIGHT_DEPLOY := Color(0.2, 0.8, 0.2, 0.35)   # 绿色 — 可部署
 const HIGHLIGHT_MOVE   := Color(0.2, 0.6, 1.0, 0.35)   # 蓝色 — 可移动
+const HIGHLIGHT_ATTACK := Color(1.0, 0.6, 0.1, 0.50)   # 橙色 — 可攻击
 const HIGHLIGHT_SELECT := Color(1.0, 0.85, 0.2, 0.40)   # 金色 — 已选中
 
 signal slot_clicked(row: int, col: int)
 signal move_requested(from_row: int, from_col: int, to_row: int, to_col: int)
+signal attack_requested(from_row: int, from_col: int, target_row: int, target_col: int)
 
 ## 当前最大行数（5 为基础，可扩展到 7）
 var max_rows: int = 5
@@ -25,6 +27,8 @@ var turn_manager: TurnManager = null
 var _unit_displays: Dictionary = {}
 var _grid_offset: Vector2 = Vector2.ZERO
 var _selected_unit_pos: Vector2i = Vector2i(-1, -1)
+var _p1_marker: Label = null
+var _p2_marker: Label = null
 
 
 func _ready() -> void:
@@ -51,8 +55,17 @@ func _recalc_grid_offset() -> void:
 func _on_window_resized() -> void:
 	_recalc_grid_offset()
 	_reposition_all_slots()
+	_reposition_markers()
 	if turn_manager and turn_manager.battle_state:
 		_on_state_changed(turn_manager.battle_state)
+
+
+func _reposition_markers() -> void:
+	if _p1_marker:
+		_p1_marker.position = Vector2(_grid_offset.x, _grid_offset.y - 22)
+	if _p2_marker:
+		var bottom_y := _grid_offset.y + GRID_SIZE * SLOT_SPACING.y + 6
+		_p2_marker.position = Vector2(_grid_offset.x, bottom_y)
 
 
 func _reposition_all_slots() -> void:
@@ -70,6 +83,26 @@ func _create_board() -> void:
 			slot.position = _grid_offset + Vector2(col * SLOT_SPACING.x, row * SLOT_SPACING.y)
 			add_child(slot)
 	print("[Board] Created %d slots" % (GRID_SIZE * GRID_SIZE))
+	_create_markers()
+
+
+func _create_markers() -> void:
+	# P1 标记 — 棋盘左上角外侧
+	_p1_marker = Label.new()
+	_p1_marker.text = "▲ 玩家 1"
+	_p1_marker.add_theme_font_size_override("font_size", 13)
+	_p1_marker.add_theme_color_override("font_color", Color(0.4, 0.65, 1.0, 1.0))
+	_p1_marker.position = Vector2(_grid_offset.x, _grid_offset.y - 22)
+	add_child(_p1_marker)
+
+	# P2 标记 — 棋盘左下角外侧
+	_p2_marker = Label.new()
+	_p2_marker.text = "▼ 玩家 2"
+	_p2_marker.add_theme_font_size_override("font_size", 13)
+	_p2_marker.add_theme_color_override("font_color", Color(1.0, 0.5, 0.5, 1.0))
+	var bottom_y := _grid_offset.y + GRID_SIZE * SLOT_SPACING.y + 6
+	_p2_marker.position = Vector2(_grid_offset.x, bottom_y)
+	add_child(_p2_marker)
 
 
 func add_extra_row(is_top: bool) -> void:
@@ -104,7 +137,24 @@ func _on_state_changed(new_state: BattleState) -> void:
 	_clear_unit_displays()
 	if new_state == null:
 		return
+	_update_markers(new_state.active_player_index)
 	_render_units(new_state)
+	_update_visibility(new_state)
+
+
+func _update_markers(active_idx: int) -> void:
+	if _p1_marker == null or _p2_marker == null:
+		return
+	if active_idx == 0:
+		_p1_marker.add_theme_color_override("font_color", Color(0.3, 1.0, 0.3, 1.0))  # 绿色 = 当前回合
+		_p1_marker.text = "▲ 玩家 1 ◀"
+		_p2_marker.add_theme_color_override("font_color", Color(1.0, 0.5, 0.5, 1.0))
+		_p2_marker.text = "▼ 玩家 2"
+	else:
+		_p2_marker.add_theme_color_override("font_color", Color(0.3, 1.0, 0.3, 1.0))
+		_p2_marker.text = "▼ 玩家 2 ◀"
+		_p1_marker.add_theme_color_override("font_color", Color(0.4, 0.65, 1.0, 1.0))
+		_p1_marker.text = "▲ 玩家 1"
 
 
 func _clear_unit_displays() -> void:
@@ -125,18 +175,165 @@ func _render_units(state: BattleState) -> void:
 				continue
 			var display := spawn_card(card_data)
 			display.position = _grid_offset + Vector2(col * SLOT_SPACING.x, row * SLOT_SPACING.y)
-			if unit.owner_index != state.active_player_index:
-				_fog_display(display)
+			# 己方原色，敌方微偏红
+			if unit.owner_index == state.active_player_index:
+				_set_card_bg(display, Color(0.3, 0.4, 0.5, 1.0))
+			else:
+				_set_card_bg(display, Color(0.48, 0.3, 0.32, 1.0))
+			_update_unit_stats(display, unit.attack, unit.defense)
 			add_child(display)
 			_unit_displays[Vector2i(row, col)] = display
 
 
-func _fog_display(display: Control) -> void:
-	var fog := ColorRect.new()
-	fog.size = SLOT_SIZE
-	fog.color = Color(0.15, 0.15, 0.15, 1.0)
-	fog.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	display.add_child(fog)
+## Phase 3: 迷雾可见性计算
+func _update_visibility(state: BattleState) -> void:
+	if state == null:
+		return
+	var viewer_idx := state.active_player_index
+	# 1. 收集本方所有单位的视野覆盖格子
+	var visible_cells: Dictionary = {}  # {Vector2i: true}
+	for r in range(state.board.rows):
+		for c in range(state.board.cols):
+			var unit := state.board.get_unit(r, c)
+			if unit == null or unit.owner_index != viewer_idx:
+				continue
+			var card_data: Resource = CardDataLoader.cards.get(unit.card_id)
+			if card_data == null:
+				continue
+			# 遍历棋盘所有格子，判定是否在此单位的视野内
+			for tr in range(state.board.rows):
+				for tc in range(state.board.cols):
+					if GameLogic._in_vision_range(card_data.vision_range, r, c, tr, tc, viewer_idx):
+						visible_cells[Vector2i(tr, tc)] = true
+	# 2. 更新每个敌方单位的显示
+	for r in range(state.board.rows):
+		for c in range(state.board.cols):
+			var unit := state.board.get_unit(r, c)
+			if unit == null or unit.owner_index == viewer_idx:
+				continue  # 跳过己方单位（始终可见）
+			var key := Vector2i(r, c)
+			var display: CardDisplay = _unit_displays.get(key)
+			if display == null or not is_instance_valid(display):
+				continue
+			var is_visible := visible_cells.has(key)
+			display.set_visible_to_enemy(is_visible, unit.stealthed, unit.revealed)
+
+
+func _compute_visible_positions(state: BattleState) -> Array[Vector2i]:
+	var visible: Array[Vector2i] = []
+	for row in range(state.board.rows):
+		for col in range(state.board.cols):
+			var unit: BattleState.UnitData = state.board.get_unit(row, col)
+			if unit == null:
+				continue
+			if unit.owner_index != state.active_player_index:
+				continue
+			var card_data: Resource = CardDataLoader.cards.get(unit.card_id)
+			if card_data == null:
+				continue
+			var vr: String = card_data.vision_range
+			match vr:
+				"adjacent_4":
+					_add_adjacent_4_vision(visible, row, col, state)
+				"front_3x3":
+					_add_front_3x3_vision(visible, row, col, state)
+				"adjacent_8_forward":
+					_add_adjacent_8_forward_vision(visible, row, col, state)
+				"front_3x2":
+					_add_front_3x2_vision(visible, row, col, state)
+				"frontline_only":
+					_add_frontline_vision(visible, row, col, state)
+				_:
+					_add_adjacent_4_vision(visible, row, col, state)
+	return visible
+
+
+func _add_adjacent_4_vision(visible: Array[Vector2i], row: int, col: int, state: BattleState) -> void:
+	for dr in [-1, 0, 1]:
+		for dc in [-1, 0, 1]:
+			if dr == 0 and dc == 0:
+				continue
+			var tr: int = row + dr
+			var tc: int = col + dc
+			if tr >= 0 and tr < state.board.rows and tc >= 0 and tc < state.board.cols:
+				var v := Vector2i(tr, tc)
+				if not (v in visible):
+					visible.append(v)
+
+
+func _add_front_3x3_vision(visible: Array[Vector2i], row: int, col: int, state: BattleState) -> void:
+	# 向前方 3 列 × 3 行（P1 向下，P2 向上）
+	var unit := state.board.get_unit(row, col)
+	if unit == null:
+		return
+	var dir: int = 1 if unit.owner_index == 0 else -1
+	for r in range(1, 4):
+		var tr: int = row + dir * r
+		if tr < 0 or tr >= state.board.rows:
+			break
+		for dc in [-1, 0, 1]:
+			var tc: int = col + dc
+			if tc >= 0 and tc < state.board.cols:
+				var v := Vector2i(tr, tc)
+				if not (v in visible):
+					visible.append(v)
+
+
+func _add_adjacent_8_forward_vision(visible: Array[Vector2i], row: int, col: int, state: BattleState) -> void:
+	# 周围八格 + 向前额外一格
+	_add_adjacent_4_vision(visible, row, col, state)
+	var unit := state.board.get_unit(row, col)
+	if unit == null:
+		return
+	var dir: int = 1 if unit.owner_index == 0 else -1
+	var tr: int = row + dir * 2
+	var tc: int = col
+	if tr >= 0 and tr < state.board.rows:
+		var v := Vector2i(tr, tc)
+		if not (v in visible):
+			visible.append(v)
+
+
+func _add_front_3x2_vision(visible: Array[Vector2i], row: int, col: int, state: BattleState) -> void:
+	var unit := state.board.get_unit(row, col)
+	if unit == null:
+		return
+	var dir: int = 1 if unit.owner_index == 0 else -1
+	for r in range(1, 3):
+		var tr: int = row + dir * r
+		if tr < 0 or tr >= state.board.rows:
+			break
+		for dc in [-1, 0, 1]:
+			var tc: int = col + dc
+			if tc >= 0 and tc < state.board.cols:
+				var v := Vector2i(tr, tc)
+				if not (v in visible):
+					visible.append(v)
+
+
+func _add_frontline_vision(visible: Array[Vector2i], row: int, col: int, state: BattleState) -> void:
+	for c in range(state.board.cols):
+		var v := Vector2i(row, c)
+		if not (v in visible):
+			visible.append(v)
+
+
+func _update_unit_stats(display: Control, atk: int, df: int) -> void:
+	for child in display.get_children():
+		if child is Label:
+			var lbl := child as Label
+			# 左侧小标签 = 攻击力，右侧小标签 = 防御力
+			if lbl.position.x < 50 and lbl.position.y > 70:
+				lbl.text = str(atk)
+			elif lbl.position.x > 50 and lbl.position.y > 70:
+				lbl.text = str(df)
+
+
+func _set_card_bg(display: Control, color: Color) -> void:
+	for child in display.get_children():
+		if child is ColorRect:
+			child.color = color
+			return
 
 
 ## ── 部署高亮 ──
@@ -158,7 +355,16 @@ func clear_highlights() -> void:
 		slot.hide_highlight()
 
 
-## ── 单位选中与移动 ──
+func _clear_overlays() -> void:
+	for display in _unit_displays.values():
+		if not is_instance_valid(display):
+			continue
+		for child in display.get_children():
+			if child is ColorRect and (child.name == "_atk_overlay" or child.name == "_select_overlay"):
+				child.queue_free()
+
+
+## ── 单位选中、移动、攻击 ──
 
 func _select_unit(row: int, col: int) -> void:
 	var state := turn_manager.get_state()
@@ -169,24 +375,58 @@ func _select_unit(row: int, col: int) -> void:
 		return
 	if unit.owner_index != state.active_player_index:
 		return
-	if unit.has_acted:
-		return  # 已行动过
+	# Standard units (move or attack once): blocked by has_acted
+	if unit.move_limit <= 1 and not unit.can_move_after_attack:
+		if unit.has_acted:
+			return
+	# Air units: blocked only when BOTH actions used
+	elif unit.can_move_after_attack and unit.move_limit <= 1:
+		if unit.has_attacked and unit.move_count >= unit.move_limit:
+			return
+	# Tank: blocked only when no moves remain AND already attacked
+	else:
+		if unit.move_count >= unit.move_limit and unit.has_attacked:
+			return
 	_selected_unit_pos = Vector2i(row, col)
-	# 高亮选中单位
+	# 金色高亮选中单位（slot 层）
 	for slot in get_tree().get_nodes_in_group("board_slot"):
 		if slot.slot_row == row and slot.slot_col == col:
 			slot.show_highlight(HIGHLIGHT_SELECT)
 			break
-	# 高亮可移动目标格
-	var targets := _get_valid_move_targets(row, col, state)
+	# 蓝色高亮可移动目标（slot 层）
+	var move_targets := _get_valid_move_targets(row, col, state)
 	for slot in get_tree().get_nodes_in_group("board_slot"):
-		if Vector2i(slot.slot_row, slot.slot_col) in targets:
+		if Vector2i(slot.slot_row, slot.slot_col) in move_targets:
 			slot.show_highlight(HIGHLIGHT_MOVE)
+	# 橙色高亮可攻击目标 — 直接改敌方 CardDisplay 颜色
+	_apply_attack_highlights(state, row, col)
+	# 添加选中指示器到己方单位
+	var key := Vector2i(row, col)
+	if _unit_displays.has(key):
+		var sel_overlay := ColorRect.new()
+		sel_overlay.name = "_select_overlay"
+		sel_overlay.size = SLOT_SIZE
+		sel_overlay.color = Color(1.0, 0.85, 0.2, 0.25)
+		sel_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_unit_displays[key].add_child(sel_overlay)
+
+
+func _apply_attack_highlights(state: BattleState, from_row: int, from_col: int) -> void:
+	var attack_targets := _get_valid_attack_targets(from_row, from_col, state)
+	for pos in attack_targets:
+		if _unit_displays.has(pos):
+			var overlay := ColorRect.new()
+			overlay.name = "_atk_overlay"
+			overlay.size = SLOT_SIZE
+			overlay.color = HIGHLIGHT_ATTACK
+			overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_unit_displays[pos].add_child(overlay)
 
 
 func _deselect_unit() -> void:
 	_selected_unit_pos = Vector2i(-1, -1)
 	clear_highlights()
+	_clear_overlays()
 
 
 func _get_valid_move_targets(from_row: int, from_col: int, state: BattleState) -> Array[Vector2i]:
@@ -202,18 +442,50 @@ func _get_valid_move_targets(from_row: int, from_col: int, state: BattleState) -
 				continue
 			var tr: int = from_row + dr
 			var tc: int = from_col + dc
-			# 边界检查
 			if tr < 0 or tr >= state.board.rows or tc < 0 or tc >= state.board.cols:
 				continue
-			# 禁止后退：P1 不能向上(row-)，P2 不能向下(row+)
 			if player_idx == 0 and tr < from_row:
 				continue
 			if player_idx == 1 and tr > from_row:
 				continue
-			# 目标格必须为空
 			if state.board.get_unit(tr, tc) != null:
 				continue
 			targets.append(Vector2i(tr, tc))
+	return targets
+
+
+func _get_valid_attack_targets(from_row: int, from_col: int, state: BattleState) -> Array[Vector2i]:
+	var targets: Array[Vector2i] = []
+	var unit := state.board.get_unit(from_row, from_col)
+	if unit == null:
+		return targets
+	var card_data: Resource = CardDataLoader.cards.get(unit.card_id)
+	if card_data == null:
+		return targets
+	var range_str: String = card_data.attack_range
+	for row in range(state.board.rows):
+		for col in range(state.board.cols):
+			var target := state.board.get_unit(row, col)
+			if target == null:
+				continue
+			if target.owner_index == unit.owner_index:
+				continue
+			var dr: int = abs(row - from_row)
+			var dc: int = abs(col - from_col)
+			var in_range: bool = false
+			match range_str:
+				"adjacent_4":
+					in_range = dr <= 1 and dc <= 1 and not (dr == 0 and dc == 0)
+				"adjacent_8":
+					in_range = dr <= 1 and dc <= 1 and not (dr == 0 and dc == 0)
+				"column_and_neighbors":
+					in_range = abs(col - from_col) <= 1 and not (dr == 0 and dc == 0)
+				"global":
+					in_range = true
+				_:
+					in_range = dr <= 1 and dc <= 1 and not (dr == 0 and dc == 0)
+			if in_range:
+				targets.append(Vector2i(row, col))
 	return targets
 
 
@@ -235,28 +507,41 @@ func _input(event: InputEvent) -> void:
 func _handle_slot_press(row: int, col: int) -> void:
 	var state := turn_manager.get_state() if turn_manager else null
 
-	# 模式 1：单位已选中 → 尝试移动
+	# 模式 1：单位已选中 → 尝试移动或攻击
 	if _selected_unit_pos.x >= 0:
 		var from_r := _selected_unit_pos.x
 		var from_c := _selected_unit_pos.y
 		if state == null:
 			_deselect_unit()
 			return
-		var targets := _get_valid_move_targets(from_r, from_c, state)
-		if Vector2i(row, col) in targets:
+
+		# 检查移动
+		var move_targets := _get_valid_move_targets(from_r, from_c, state)
+		if Vector2i(row, col) in move_targets:
 			_deselect_unit()
 			move_requested.emit(from_r, from_c, row, col)
 			return
+
+		# 检查攻击
+		var attack_targets := _get_valid_attack_targets(from_r, from_c, state)
+		if Vector2i(row, col) in attack_targets:
+			_deselect_unit()
+			attack_requested.emit(from_r, from_c, row, col)
+			return
+
 		# 点击同一单位 → 取消选中
 		if row == from_r and col == from_c:
 			_deselect_unit()
 			return
+
 		# 点击其他位置 → 取消选中
 		_deselect_unit()
 		return
 
-	# 模式 2：无单位选中 → 总是发射 slot_clicked（供部署等用途）
-	slot_clicked.emit(row, col)
+	# 模式 2：无单位选中 → 发射 slot_clicked（供部署等用途）
+	# 注意：行动阶段不发射 slot_clicked，由 Board 自行处理选中/移动/攻击
+	if state == null or state.phase != "action":
+		slot_clicked.emit(row, col)
 
 	# 模式 3：行动阶段 → 尝试选中己方可行动单位
 	if state == null:

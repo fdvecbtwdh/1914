@@ -42,6 +42,7 @@ static func purchase_card(state: BattleState, player_idx: int, card_id: String) 
 	player.resources["G"] -= card_data.cost_g
 	player.purchase_zone.erase(card_id)
 	player.hand.append(card_id)
+	player.hand_card_purchase_turn[card_id] = new_state.turn
 	return new_state
 
 
@@ -53,15 +54,18 @@ static func deploy_unit(state: BattleState, player_idx: int, card_id: String, ro
 	var card_data = CardDataLoader.cards.get(card_id)
 	if card_data == null:
 		return null
+	# Phase 3: 响应词条检查 — 本回合购买的卡只能在有"响应"词条时部署
+	var purchase_turn: int = player.hand_card_purchase_turn.get(card_id, -1)
+	if purchase_turn == new_state.turn:
+		if not card_data.abilities.has("响应"):
+			return new_state  # 本回合购买但无响应词条，不能部署
 	if player.resources["Z"] < card_data.cost_k:
-		return null  # Z 不够
-	# 检查格子在己方后方/前线（含列越界保护）
+		return null
 	if col < 0 or col >= new_state.board.cols:
 		return null
 	var deployable_rows: Array[int] = get_deployable_rows(new_state, player_idx, card_id)
 	if not (row in deployable_rows):
 		return null
-	# 目标格子为空
 	if new_state.board.get_unit(row, col) != null:
 		return null
 	player.resources["Z"] -= card_data.cost_k
@@ -74,117 +78,168 @@ static func deploy_unit(state: BattleState, player_idx: int, card_id: String, ro
 	unit.max_defense = card_data.defense
 	unit.abilities = card_data.abilities.duplicate()
 	unit.deployed_this_turn = true
+	# Phase 3: 初始化扩展字段
+	_init_unit_from_card(unit, card_data)
 	new_state.board.set_unit(row, col, unit)
 	new_state.action_log.append({"type": "deploy", "player": player_idx, "card_id": card_id, "row": row, "col": col})
+	_apply_guard(new_state, unit)
 	return new_state
 
 
 static func move_unit(state: BattleState, player_idx: int, from_row: int, from_col: int, to_row: int, to_col: int) -> BattleState:
 	var new_state: BattleState = state.duplicate(true)
-	var unit := new_state.board.get_unit(from_row, from_col)
+	var unit: BattleState.UnitData = new_state.board.get_unit(from_row, from_col)
 	if unit == null or unit.owner_index != player_idx:
-		return null
-	if unit.has_acted:
-		return null
+		return new_state
+
+	# 检查移动次数
+	if unit.move_count >= unit.move_limit:
+		return new_state
+
+	# 标准单位：移动或攻击共一次（has_acted 检查）
+	# 坦克/空军：has_acted 不阻挡（由 move_count/has_attacked 分别控制）
+	if unit.move_limit <= 1 and not unit.can_move_after_attack:
+		if unit.has_acted:
+			return new_state
+
 	# 目标格越界保护
 	if to_row < 0 or to_row >= new_state.board.rows or to_col < 0 or to_col >= new_state.board.cols:
-		return null
+		return new_state
+
 	# 八方向移动一格
-	var dr = abs(to_row - from_row)
-	var dc = abs(to_col - from_col)
+	var dr: int = abs(to_row - from_row)
+	var dc: int = abs(to_col - from_col)
 	if dr > 1 or dc > 1 or (dr == 0 and dc == 0):
-		return null
+		return new_state
+
 	# 禁止向后方移动
 	if player_idx == 0 and to_row < from_row:
-		return null
+		return new_state
 	if player_idx == 1 and to_row > from_row:
-		return null
+		return new_state
+
 	# 目标格为空
 	if new_state.board.get_unit(to_row, to_col) != null:
-		return null
-	# K 消耗
+		return new_state
+
+	# Z 消耗（Phase 3: 移动消耗 Z）
 	var player = new_state.players[player_idx]
-	if player.resources["K"] < 1:
-		return null
-	player.resources["K"] -= 1
+	if player.resources["Z"] < 1:
+		return new_state
+	player.resources["Z"] -= 1
+
+	# 执行移动
+	_clear_guard(new_state, unit)
 	new_state.board.set_unit(from_row, from_col, null)
 	new_state.board.set_unit(to_row, to_col, unit)
+	unit.move_count += 1
 	unit.has_acted = true
 	new_state.action_log.append({"type": "move", "player": player_idx, "from": [from_row, from_col], "to": [to_row, to_col]})
+	_apply_guard(new_state, unit)
 	return new_state
 
 
 static func attack_unit(state: BattleState, player_idx: int, from_row: int, from_col: int, target_row: int, target_col: int) -> BattleState:
 	var new_state: BattleState = state.duplicate(true)
-	var attacker := new_state.board.get_unit(from_row, from_col)
-	var defender := new_state.board.get_unit(target_row, target_col)
+	var attacker: BattleState.UnitData = new_state.board.get_unit(from_row, from_col)
+	var defender: BattleState.UnitData = new_state.board.get_unit(target_row, target_col)
 	if attacker == null or defender == null:
 		return null
 	if attacker.owner_index != player_idx:
 		return null
 	if defender.owner_index == player_idx:
 		return null  # 不能打友方
-	if attacker.has_acted:
+	# 检查是否已攻击
+	if attacker.has_attacked:
 		return null
 	# 射程检查（简化：相邻四格 + 火炮全图）
 	if not _in_attack_range(attacker, from_row, from_col, target_row, target_col):
 		return null
-	# K 消耗
+	# Phase 3: 空战规则 — 陆军不能攻击空军
+	var attacker_card: Resource = CardDataLoader.cards.get(attacker.card_id)
+	var defender_card: Resource = CardDataLoader.cards.get(defender.card_id)
+	if attacker_card != null and defender_card != null:
+		var atk_is_air := _is_air_unit(attacker_card.unit_class)
+		var def_is_air := _is_air_unit(defender_card.unit_class)
+		# 陆军攻击空军 → 无效
+		if not atk_is_air and def_is_air:
+			return new_state
+		# 轰炸机攻击空军 → 无效（轰炸机只能打陆军）
+		if attacker_card.unit_class == "bomber" and def_is_air:
+			return new_state
+	# Z 消耗（Phase 3：移动/攻击消耗战争点）
 	var player = new_state.players[player_idx]
-	if player.resources["K"] < 1:
+	if player.resources["Z"] < 1:
 		return null
-	player.resources["K"] -= 1
+	player.resources["Z"] -= 1
+
+	# Phase 3: 被守护单位伤害转移
+	var actual_row: int = target_row
+	var actual_col: int = target_col
+	if defender.is_guarded:
+		var guard_pos: Vector2i = defender.guarded_by
+		var guard_unit: BattleState.UnitData = new_state.board.get_unit(guard_pos.x, guard_pos.y)
+		if guard_unit != null and guard_unit.owner_index == defender.owner_index:
+			defender = guard_unit  # 攻击目标改为守护单位
+			actual_row = guard_pos.x
+			actual_col = guard_pos.y
 
 	# 伤害计算
-	var damage := attacker.attack
-	# 防守方坚守词条减伤
-	if defender.abilities.has("坚守"):
-		var firm_level := 1  # 默认坚守1
-		# 坦克坚守上限4由 CardData 设定，这里统一取1
-		damage = max(1, damage - firm_level)
+	var damage: int = attacker.attack
+	# Phase 3: 使用 firm_level 进行坚守减伤
+	if defender.firm_level > 0:
+		damage = max(1, damage - defender.firm_level)
 	# 施加伤害
 	defender.defense -= damage
 
 	# 战斗记录
-	new_state.action_log.append({"type": "attack", "player": player_idx, "from": [from_row, from_col], "to": [target_row, target_col], "damage": damage})
+	new_state.action_log.append({"type": "attack", "player": player_idx, "from": [from_row, from_col], "to": [actual_row, actual_col], "damage": damage})
 
 	# 是否消灭
 	if defender.defense <= 0:
 		var card_data = CardDataLoader.cards.get(defender.card_id)
-		var reward_g := 0
+		var reward_g: int = 0
 		if card_data != null:
 			reward_g = int(card_data.cost_g * 0.25)
 		# 收缴词条：50%
 		if attacker.abilities.has("收缴"):
 			reward_g = int(card_data.cost_g * 0.50) if card_data != null else 0
 		player.resources["G"] += reward_g
-		new_state.board.set_unit(target_row, target_col, null)
+		_clear_guard(new_state, defender)
+		new_state.board.set_unit(actual_row, actual_col, null)
 		new_state.action_log.append({"type": "destroy", "card_id": defender.card_id, "reward_g": reward_g})
 	else:
 		# 反击（攻击者未被消灭时）
-		_counter_attack(attacker, defender, from_row, from_col, target_row, target_col, new_state)
+		_counter_attack(attacker, defender, from_row, from_col, actual_row, actual_col, new_state)
 
 	attacker.has_acted = true
+	attacker.has_attacked = true
 	return new_state
 
 
 static func start_turn(state: BattleState) -> BattleState:
 	var new_state: BattleState = state.duplicate(true)
 	var player = new_state.players[new_state.active_player_index]
-	# G +150
+	# G +150（不变）
 	player.resources["G"] += 150
-	# K = 回合数, Z = 回合数
-	player.resources["K"] = new_state.turn
-	player.resources["Z"] = new_state.turn
+	# Z = 先手 1+2x / 后手 2+2x, 上限 25
+	player.resources["Z"] = _calc_z(new_state.active_player_index, new_state.turn)
+	# K = 回合数, 上限 10
+	player.resources["K"] = min(new_state.turn, 10)
 	# 抽 1 张
 	_draw_one(new_state, new_state.active_player_index)
-	# 重置单位行动标记
+	# 重置单位行动标记（Phase 3 扩展：同时重置 has_attacked, move_count）
 	for r in range(new_state.board.rows):
 		for c in range(new_state.board.cols):
-			var unit := new_state.board.get_unit(r, c)
+			var unit: BattleState.UnitData = new_state.board.get_unit(r, c)
 			if unit != null and unit.owner_index == new_state.active_player_index:
 				unit.has_acted = false
+				unit.has_attacked = false
+				unit.move_count = 0
 				unit.deployed_this_turn = false
+	_apply_supply(new_state, new_state.active_player_index)
+	_apply_rear_repair(new_state, new_state.active_player_index)
+	_update_stealth_reveal(new_state)
 	new_state.phase = "purchase"
 	return new_state
 
@@ -215,7 +270,7 @@ static func check_victory(state: BattleState) -> int:
 	var p2_cols := {}
 	for r in range(state.board.rows):
 		for c in range(state.board.cols):
-			var unit := state.board.get_unit(r, c)
+			var unit: BattleState.UnitData = state.board.get_unit(r, c)
 			if unit == null:
 				continue
 			if unit.owner_index == 0 and r >= 3:
@@ -229,11 +284,21 @@ static func check_victory(state: BattleState) -> int:
 	return -1
 
 
+## Phase 3: 战争点公式
+## 先手 (player_idx=0): 1 + 2×(turn−1) → 1, 3, 5, 7, ...
+## 后手 (player_idx=1): 2 + 2×(turn−1) → 2, 4, 6, 8, ...
+## 上限 25
+static func _calc_z(player_idx: int, turn: int) -> int:
+	var base: int = 1 if player_idx == 0 else 2
+	var z: int = base + 2 * (turn - 1)
+	return min(z, 25)
+
+
 static func _shuffle_deck(deck: Array) -> void:
-	var n := deck.size()
+	var n: int = deck.size()
 	while n > 1:
 		n -= 1
-		var k := randi() % (n + 1)
+		var k: int = randi() % (n + 1)
 		var tmp = deck[k]
 		deck[k] = deck[n]
 		deck[n] = tmp
@@ -296,9 +361,8 @@ static func get_deployable_rows(state: BattleState, player_idx: int, card_id: St
 			if front_occupied:
 				rows.append(front_row)
 		"cavalry":
-			# 任意友方有占领度的阵线
-			if back_occupied:
-				rows.append(back_row)
+			# 底线始终可部署 + 占领前线后可部署到前线
+			rows.append(back_row)
 			if front_occupied:
 				rows.append(front_row)
 		"artillery":
@@ -329,6 +393,11 @@ static func _in_attack_range(attacker: BattleState.UnitData, from_row: int, from
 	match range_str:
 		"adjacent_4":
 			return dr <= 1 and dc <= 1 and not (dr == 0 and dc == 0)
+		"adjacent_8":
+			return dr <= 1 and dc <= 1 and not (dr == 0 and dc == 0)
+		"column_and_neighbors":
+			# 本列 + 相邻两列，任意行
+			return abs(from_col - target_col) <= 1 and not (dr == 0 and dc == 0)
 		"global":
 			return true
 		_:
@@ -336,22 +405,219 @@ static func _in_attack_range(attacker: BattleState.UnitData, from_row: int, from
 
 
 static func _counter_attack(attacker: BattleState.UnitData, defender: BattleState.UnitData, atk_row: int, atk_col: int, def_row: int, def_col: int, state: BattleState) -> void:
-	# 攻击者有"突击" + 首次攻击 → 免反击
+	# Phase 2 规则：突击/冲锋首次攻击免反击
 	if attacker.abilities.has("突击") and attacker.deployed_this_turn:
 		return
-	# 攻击者有"冲锋" + 首次攻击 → 免反击（此处用 deployed_this_turn 近似）
 	if attacker.abilities.has("冲锋") and attacker.deployed_this_turn:
 		return
-	# 火炮不可被反击
-	var attacker_card = CardDataLoader.cards.get(attacker.card_id)
-	if attacker_card != null and attacker_card.unit_class == "artillery":
-		return
+
+	# Phase 3: 空战反击规则
+	var attacker_card: Resource = CardDataLoader.cards.get(attacker.card_id)
+	var defender_card: Resource = CardDataLoader.cards.get(defender.card_id)
+	if attacker_card != null and defender_card != null:
+		# 火炮不可被反击（Phase 2 规则，保留）
+		if attacker_card.unit_class == "artillery":
+			return
+		# 轰炸机无法反击
+		if defender_card.unit_class == "bomber":
+			return
+		# 非战斗机单位无法反击轰炸机
+		if attacker_card.unit_class == "bomber" and defender_card.unit_class != "fighter":
+			return
+		# 陆军被空军攻击：只有防空词条能反击
+		var def_is_air := _is_air_unit(defender_card.unit_class)
+		var atk_is_air := _is_air_unit(attacker_card.unit_class)
+		if atk_is_air and not def_is_air:
+			if not defender.abilities.has("防空"):
+				return
+
 	# 防守方反击
-	var counter_dmg := defender.attack
-	if attacker.abilities.has("坚守"):
-		counter_dmg = max(1, counter_dmg - 1)
+	var counter_dmg: int = defender.attack
+	# 坚守减伤（Phase 3: 使用 firm_level 替代固定值）
+	if attacker.firm_level > 0:
+		counter_dmg = max(1, counter_dmg - attacker.firm_level)
 	attacker.defense -= counter_dmg
 	state.action_log.append({"type": "counter", "damage": counter_dmg})
 	if attacker.defense <= 0:
+		_clear_guard(state, attacker)
 		state.board.set_unit(atk_row, atk_col, null)
 		state.action_log.append({"type": "destroy", "card_id": attacker.card_id, "reward_g": 0})
+
+
+## 从 abilities 数组中解析带等级的词条
+## 如 ["坚守2", "冲锋"] → _parse_ability_level(abilities, "坚守") 返回 2
+##    _parse_ability_level(abilities, "补给") 返回 0（无此词条）
+## 不带数字的默认为等级 1
+static func _parse_ability_level(abilities: Array, prefix: String) -> int:
+	for ability in abilities:
+		var a: String = ability
+		if a == prefix:
+			return 1
+		if a.begins_with(prefix) and a.length() > prefix.length():
+			var suffix := a.substr(prefix.length())
+			if suffix.is_valid_int():
+				return suffix.to_int()
+	return 0
+
+
+## 判断单位类别是否为空军
+static func _is_air_unit(unit_class: String) -> bool:
+	return unit_class == "fighter" or unit_class == "bomber"
+
+
+## 根据 CardData 初始化 UnitData 的 Phase 3 扩展字段
+static func _init_unit_from_card(unit: BattleState.UnitData, card_data: Resource) -> void:
+	# 坚守等级（坦克默认 1，其他从 abilities 解析）
+	unit.firm_level = _parse_ability_level(card_data.abilities, "坚守")
+	if card_data.unit_class == "tank" and unit.firm_level == 0:
+		unit.firm_level = 1  # 坦克默认坚守 1
+	# 补给等级
+	unit.supply_level = _parse_ability_level(card_data.abilities, "补给")
+	# 潜行
+	unit.stealthed = card_data.abilities.has("潜行")
+	unit.revealed = false
+	# 移动规则
+	match card_data.unit_class:
+		"tank":
+			unit.move_limit = 99              # 无限制
+			unit.can_move_after_attack = true
+		"fighter", "bomber":
+			unit.move_limit = 1
+			unit.can_move_after_attack = true
+			# 空军：移动和攻击各一次独立（move_limit 限移动一次，has_attacked 限攻击一次）
+		_:
+			unit.move_limit = 1
+			unit.can_move_after_attack = false
+
+#region Phase 3: 守护词条
+
+## 部署后有守护词条的单位，给相邻八格友方单位加"被守护"
+static func _apply_guard(state: BattleState, unit: BattleState.UnitData) -> void:
+	if not unit.abilities.has("守护"):
+		return
+	var row := unit.row
+	var col := unit.col
+	for dr in range(-1, 2):
+		for dc in range(-1, 2):
+			if dr == 0 and dc == 0:
+				continue
+			var nr := row + dr
+			var nc := col + dc
+			var neighbor: BattleState.UnitData = state.board.get_unit(nr, nc)
+			if neighbor != null and neighbor.owner_index == unit.owner_index:
+				neighbor.is_guarded = true
+				neighbor.guarded_by = Vector2i(row, col)
+
+
+## 守护单位离场/移动前，清除所有指向它的"被守护"
+static func _clear_guard(state: BattleState, unit: BattleState.UnitData) -> void:
+	for r in range(state.board.rows):
+		for c in range(state.board.cols):
+			var other: BattleState.UnitData = state.board.get_unit(r, c)
+			if other != null and other.guarded_by == Vector2i(unit.row, unit.col):
+				other.is_guarded = false
+				other.guarded_by = Vector2i(-1, -1)
+
+#endregion
+
+#region Phase 3: 视野判定
+
+## 视野范围判定（与攻击范围判定分开）
+static func _in_vision_range(vision_str: String, from_row: int, from_col: int, to_row: int, to_col: int, owner_idx: int) -> bool:
+	var dr := to_row - from_row  # 带符号的方向
+	var adr: int = abs(dr)
+	var adc: int = abs(to_col - from_col)
+	# 确定"前方"方向：P1(owner=0) 前方是行号增大，P2(owner=1) 前方是行号减小
+	var forward_dr: int = dr if owner_idx == 0 else -dr
+	match vision_str:
+		"adjacent_4":
+			return (adr + adc) == 1  # 仅上下左右
+		"adjacent_8":
+			return adr <= 1 and adc <= 1 and not (adr == 0 and adc == 0)
+		"adjacent_8_forward":
+			# 周围八格 + 向前第二格（共 12 格）
+			if adr <= 1 and adc <= 1 and not (adr == 0 and adc == 0):
+				return true
+			if forward_dr == 2 and adc == 0:
+				return true
+			return false
+		"front_3x2":
+			# 前方横向 3 列 × 2 行
+			return forward_dr >= 1 and forward_dr <= 2 and adc <= 1
+		"front_3x3":
+			# 前方横向 3 列 × 3 行
+			return forward_dr >= 1 and forward_dr <= 3 and adc <= 1
+		"frontline_only":
+			return dr == 0 and adc <= 1
+		"none":
+			return false
+		_:
+			return adr <= 1 and adc <= 1 and not (adr == 0 and adc == 0)
+
+#endregion
+
+#region Phase 3: 补给与后方修复
+
+## 补给词条：友方回合开始时，修复相邻一个已受伤单位
+static func _apply_supply(state: BattleState, player_idx: int) -> void:
+	for r in range(state.board.rows):
+		for c in range(state.board.cols):
+			var unit: BattleState.UnitData = state.board.get_unit(r, c)
+			if unit == null or unit.owner_index != player_idx:
+				continue
+			if unit.supply_level <= 0:
+				continue
+			# 找相邻八格中一个已受伤的友方单位
+			for dr in range(-1, 2):
+				for dc in range(-1, 2):
+					if dr == 0 and dc == 0:
+						continue
+					var neighbor: BattleState.UnitData = state.board.get_unit(r + dr, c + dc)
+					if neighbor != null and neighbor.owner_index == player_idx and neighbor.defense < neighbor.max_defense:
+						neighbor.defense = min(neighbor.max_defense, neighbor.defense + unit.supply_level)
+						state.action_log.append({"type": "supply", "from": [r, c], "to": [r + dr, c + dc], "amount": unit.supply_level})
+						return  # 只修复一个
+
+
+## 后方修复规则：处于后方（P1 行 0 / P2 行 4）的单位每回合恢复 1 防御力
+static func _apply_rear_repair(state: BattleState, player_idx: int) -> void:
+	var rear_row := 0 if player_idx == 0 else state.board.rows - 1
+	for c in range(state.board.cols):
+		var unit: BattleState.UnitData = state.board.get_unit(rear_row, c)
+		if unit != null and unit.owner_index == player_idx and unit.defense < unit.max_defense:
+			unit.defense = min(unit.max_defense, unit.defense + 1)
+			state.action_log.append({"type": "rear_repair", "row": rear_row, "col": c})
+
+#endregion
+
+#region Phase 3: 潜行揭露
+
+## 重新计算所有潜行单位的 revealed 状态
+## 处于敌方步兵或战斗机视野范围内的潜行单位 → revealed = true
+static func _update_stealth_reveal(state: BattleState) -> void:
+	for r in range(state.board.rows):
+		for c in range(state.board.cols):
+			var unit: BattleState.UnitData = state.board.get_unit(r, c)
+			if unit == null or not unit.stealthed:
+				continue
+			unit.revealed = false
+			var enemy_idx := 1 - unit.owner_index
+			# 检查是否有敌方步兵/战斗机能看到此位置
+			for er in range(state.board.rows):
+				for ec in range(state.board.cols):
+					var enemy: BattleState.UnitData = state.board.get_unit(er, ec)
+					if enemy == null or enemy.owner_index != enemy_idx:
+						continue
+					var enemy_card: Resource = CardDataLoader.cards.get(enemy.card_id)
+					if enemy_card == null:
+						continue
+					# 步兵或战斗机能发现潜行单位
+					if enemy_card.unit_class != "infantry" and enemy_card.unit_class != "fighter":
+						continue
+					if _in_vision_range(enemy_card.vision_range, er, ec, r, c, enemy_idx):
+						unit.revealed = true
+						break
+				if unit.revealed:
+					break
+
+#endregion

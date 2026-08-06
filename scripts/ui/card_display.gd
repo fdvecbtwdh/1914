@@ -33,11 +33,20 @@ func setup(data: Resource) -> void:
 	label.position = Vector2(4, 4)
 	add_child(label)
 
-	var stats = Label.new()
-	stats.text = "%d/%d" % [data.attack, data.defense]
-	stats.add_theme_font_size_override("font_size", 10)
-	stats.position = Vector2(4, 80)
-	add_child(stats)
+	# 攻击力 — 左下
+	var atk_label = Label.new()
+	atk_label.text = str(data.attack)
+	atk_label.add_theme_font_size_override("font_size", 11)
+	atk_label.position = Vector2(6, 80)
+	add_child(atk_label)
+
+	# 防御力 — 右下
+	var def_label = Label.new()
+	def_label.text = str(data.defense)
+	def_label.add_theme_font_size_override("font_size", 11)
+	def_label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4, 1.0))
+	def_label.position = Vector2(CARD_SIZE.x - 18, 80)
+	add_child(def_label)
 
 	print("[CardDisplay] Setup: %s" % data.card_name)
 
@@ -64,7 +73,6 @@ func _start_drag(mouse_pos: Vector2) -> void:
 	var parent = get_parent()
 	parent.remove_child(self)
 	# 如果从棋盘格子中拖出，清除格子的占用记录
-	# （parent 类型是 Resource，因内部类限制无法直接类型判断，用 has_method 检测）
 	if parent.has_method("remove_card"):
 		parent.remove_card()
 	root.add_child(self)
@@ -94,3 +102,35 @@ func _end_drag(mouse_pos: Vector2) -> void:
 		original_parent.add_child(self)
 		global_position = original_position
 		print("[CardDisplay] Drag cancelled — returned to original position")
+
+
+## Phase 3: 迷雾系统 — 控制敌方可见性
+var _fog_overlay: ColorRect = null
+var _is_fogged: bool = false
+var _unit_stealthed: bool = false
+var _unit_revealed: bool = false
+
+
+func set_visible_to_enemy(v: bool, stealthed: bool = false, revealed: bool = false) -> void:
+	_unit_stealthed = stealthed
+	_unit_revealed = revealed
+	# 潜行且未被发现 → 完全不显示
+	if stealthed and not revealed:
+		hide()
+		return
+	show()
+	if v:
+		# 可见：移除迷雾
+		_is_fogged = false
+		if _fog_overlay != null:
+			_fog_overlay.queue_free()
+			_fog_overlay = null
+	else:
+		# 不可见：添加灰色迷雾
+		if _fog_overlay == null:
+			_fog_overlay = ColorRect.new()
+			_fog_overlay.size = CARD_SIZE
+			_fog_overlay.color = Color(0.15, 0.15, 0.15, 1.0)
+			_fog_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			add_child(_fog_overlay)
+		_is_fogged = true

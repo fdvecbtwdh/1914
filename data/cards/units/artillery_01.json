@@ -8,7 +8,7 @@
   "cost_k": 1,
   "attack": 5,
   "defense": 2,
-  "vision_range": "front_3x3",
+  "vision_range": "adjacent_4",
   "attack_range": "global",
   "abilities": ["突击"],
   "rarity": "common",

@@ -76,6 +76,11 @@ func _start_local_game() -> void:
 		turn_manager.submit_action({"type": "move", "from_row": from_r, "from_col": from_c, "to_row": to_r, "to_col": to_c})
 	)
 
+	# 行动阶段：攻击单位
+	board.attack_requested.connect(func(from_r: int, from_c: int, target_r: int, target_c: int):
+		turn_manager.submit_action({"type": "attack", "from_row": from_r, "from_col": from_c, "target_row": target_r, "target_col": target_c})
+	)
+
 	# 游戏结束
 	turn_manager.game_over.connect(func(winner: int):
 		print("[GameManager] Game Over! Winner: Player %d" % (winner + 1))

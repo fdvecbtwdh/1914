@@ -154,19 +154,20 @@ func _test_move_unit() -> void:
 	var pid := "test_infantry_01"
 	st = GameLogic.purchase_card(st, 0, pid)
 	st = GameLogic.deploy_unit(st, 0, pid, 0, 0)
+	st.players[0].resources["Z"] = 1
 	# 前进一格
 	var st2 := GameLogic.move_unit(st, 0, 0, 0, 1, 0)
 	var u := st2.board.get_unit(1, 0)
 	_check(u != null and st2.board.get_unit(0, 0) == null, "unit moved to (1,0)")
 	_check(u != null and u.has_acted, "unit marked has_acted")
-	_check(st2.players[0].resources["K"] == 0, "K deducted by 1")
+	_check(st2.players[0].resources["Z"] == 0, "Z deducted by 1")
 	# 后退一格（P1 禁止 to_row < from_row）
 	var st3 := GameLogic.move_unit(st, 0, 0, 0, -1, 0)
 	_check(st3 == null, "P1 cannot move backward (returns null)")
 	# 越界保护
 	var st4 := GameLogic.move_unit(st, 0, 0, 0, 99, 0)
 	_check(st4 == null, "out-of-bounds move rejected (returns null)")
-	_check(st.players[0].resources["K"] == 1, "no K spent on out-of-bounds move")
+	_check(st.players[0].resources["Z"] == 1, "no Z spent on out-of-bounds move")
 	# 已有行动单位不可再动
 	var st5 := GameLogic.move_unit(GameLogic.move_unit(st, 0, 0, 0, 1, 0), 0, 1, 0, 2, 0)
 	_check(st5 == null, "acted unit cannot move again (returns null)")
@@ -175,7 +176,7 @@ func _test_move_unit() -> void:
 func _test_attack_unit() -> void:
 	print("[attack_unit]")
 	var st := _make_init_state()
-	st.players[0].resources["K"] = 5
+	st.players[0].resources["Z"] = 5
 	_place_unit(st, 0, 0, 0, 3, 4)   # P1 步兵 (攻3防4)
 	_place_unit(st, 1, 1, 0, 3, 4)   # P2 步兵 (攻3防4)，相邻
 	var st2 := GameLogic.attack_unit(st, 0, 0, 0, 1, 0)
@@ -183,7 +184,7 @@ func _test_attack_unit() -> void:
 	var def := st2.board.get_unit(1, 0)
 	_check(def != null and def.defense == 1, "defender took 3 damage (4->1)")
 	_check(atk != null and atk.defense == 1, "attacker counter-attacked (4->1)")
-	_check(st2.players[0].resources["K"] == 4, "K deducted by 1")
+	_check(st2.players[0].resources["Z"] == 4, "Z deducted by 1")
 	_check(st2.action_log.size() > st.action_log.size(), "attack logged")
 	# 不能攻击友方
 	var st3 := GameLogic.attack_unit(st, 0, 0, 0, 0, 0)
@@ -197,7 +198,7 @@ func _test_attack_unit() -> void:
 func _test_counter_attack() -> void:
 	print("[counter_attack kill]")
 	var st := _make_init_state()
-	st.players[0].resources["K"] = 5
+	st.players[0].resources["Z"] = 5
 	_place_unit(st, 0, 0, 0, 1, 1)   # 脆皮攻击者
 	_place_unit(st, 1, 1, 0, 5, 10)  # 高攻高防防守者
 	var st2 := GameLogic.attack_unit(st, 0, 0, 0, 1, 0)
@@ -209,7 +210,7 @@ func _test_artillery_no_counter() -> void:
 	print("[artillery no counter]")
 	# 场景1：防守方存活，火炮免疫反击
 	var st := _make_init_state()
-	st.players[0].resources["K"] = 5
+	st.players[0].resources["Z"] = 5
 	_place_unit(st, 0, 0, 0, 5, 2, "artillery_01")  # 火炮 突击 全局射程
 	_place_unit(st, 1, 1, 0, 9, 8, "infantry_01")   # 高防步兵，抗住第一击
 	var st2 := GameLogic.attack_unit(st, 0, 0, 0, 1, 0)
@@ -218,7 +219,7 @@ func _test_artillery_no_counter() -> void:
 	_check(st2.board.get_unit(1, 0) != null, "defender survives on 3 def")
 	# 场景2：火炮击杀低防步兵
 	var stb := _make_init_state()
-	stb.players[0].resources["K"] = 5
+	stb.players[0].resources["Z"] = 5
 	_place_unit(stb, 0, 2, 0, 5, 2, "artillery_01")
 	_place_unit(stb, 1, 3, 0, 9, 3, "infantry_01")  # 全局射程可隔行打击
 	var st2b := GameLogic.attack_unit(stb, 0, 2, 0, 3, 0)
