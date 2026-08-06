@@ -72,6 +72,8 @@ static func deploy_unit(state: BattleState, player_idx: int, card_id: String, ro
 	unit.max_defense = card_data.defense
 	unit.abilities = card_data.abilities.duplicate()
 	unit.deployed_this_turn = true
+	# Phase 3: 初始化扩展字段
+	_init_unit_from_card(unit, card_data)
 	new_state.board.set_unit(row, col, unit)
 	new_state.action_log.append({"type": "deploy", "player": player_idx, "card_id": card_id, "row": row, "col": col})
 	return new_state
@@ -365,3 +367,49 @@ static func _counter_attack(attacker: BattleState.UnitData, defender: BattleStat
 	if attacker.defense <= 0:
 		state.board.set_unit(atk_row, atk_col, null)
 		state.action_log.append({"type": "destroy", "card_id": attacker.card_id, "reward_g": 0})
+
+
+## 从 abilities 数组中解析带等级的词条
+## 如 ["坚守2", "冲锋"] → _parse_ability_level(abilities, "坚守") 返回 2
+##    _parse_ability_level(abilities, "补给") 返回 0（无此词条）
+## 不带数字的默认为等级 1
+static func _parse_ability_level(abilities: Array, prefix: String) -> int:
+	for ability in abilities:
+		var a: String = ability
+		if a == prefix:
+			return 1
+		if a.begins_with(prefix) and a.length() > prefix.length():
+			var suffix := a.substr(prefix.length())
+			if suffix.is_valid_int():
+				return suffix.to_int()
+	return 0
+
+
+## 判断单位类别是否为空军
+static func _is_air_unit(unit_class: String) -> bool:
+	return unit_class == "fighter" or unit_class == "bomber"
+
+
+## 根据 CardData 初始化 UnitData 的 Phase 3 扩展字段
+static func _init_unit_from_card(unit: BattleState.UnitData, card_data: Resource) -> void:
+	# 坚守等级（坦克默认 1，其他从 abilities 解析）
+	unit.firm_level = _parse_ability_level(card_data.abilities, "坚守")
+	if card_data.unit_class == "tank" and unit.firm_level == 0:
+		unit.firm_level = 1  # 坦克默认坚守 1
+	# 补给等级
+	unit.supply_level = _parse_ability_level(card_data.abilities, "补给")
+	# 潜行
+	unit.stealthed = card_data.abilities.has("潜行")
+	unit.revealed = false
+	# 移动规则
+	match card_data.unit_class:
+		"tank":
+			unit.move_limit = 99              # 无限制
+			unit.can_move_after_attack = true
+		"fighter", "bomber":
+			unit.move_limit = 1
+			unit.can_move_after_attack = false
+			# 空军：移动和攻击各一次（由 has_acted + has_attacked 分开控制）
+		_:
+			unit.move_limit = 1
+			unit.can_move_after_attack = false
