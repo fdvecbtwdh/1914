@@ -2,8 +2,11 @@
   "name": "默认卡组",
   "starter": "infantry_01",
   "cards": [
-    "infantry_01", "infantry_01", "infantry_01",
-    "cavalry_01", "cavalry_01", "cavalry_01",
-    "artillery_01", "artillery_01", "artillery_01"
+    "infantry_01", "infantry_01", "infantry_02", "infantry_03",
+    "cavalry_01", "cavalry_01", "cavalry_02",
+    "artillery_01", "artillery_02",
+    "tank_01", "tank_02", "tank_03",
+    "fighter_01", "fighter_02",
+    "bomber_01"
   ]
 }
