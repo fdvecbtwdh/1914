@@ -80,35 +80,47 @@ static func deploy_unit(state: BattleState, player_idx: int, card_id: String, ro
 
 
 static func move_unit(state: BattleState, player_idx: int, from_row: int, from_col: int, to_row: int, to_col: int) -> BattleState:
-	var new_state: BattleState = state.duplicate(true)
+	var new_state := state.duplicate(true)
 	var unit := new_state.board.get_unit(from_row, from_col)
 	if unit == null or unit.owner_index != player_idx:
-		return null
-	if unit.has_acted:
-		return null
-	# 目标格越界保护
-	if to_row < 0 or to_row >= new_state.board.rows or to_col < 0 or to_col >= new_state.board.cols:
-		return null
+		return new_state
+
+	# 检查移动次数
+	if unit.move_count >= unit.move_limit:
+		return new_state
+
+	# 标准单位：移动或攻击共一次（has_acted 检查）
+	# 坦克/空军：has_acted 不阻挡（由 move_count/has_attacked 分别控制）
+	if unit.move_limit <= 1 and not unit.can_move_after_attack:
+		if unit.has_acted:
+			return new_state
+
 	# 八方向移动一格
-	var dr = abs(to_row - from_row)
-	var dc = abs(to_col - from_col)
+	var dr := abs(to_row - from_row)
+	var dc := abs(to_col - from_col)
 	if dr > 1 or dc > 1 or (dr == 0 and dc == 0):
-		return null
+		return new_state
+
 	# 禁止向后方移动
 	if player_idx == 0 and to_row < from_row:
-		return null
+		return new_state
 	if player_idx == 1 and to_row > from_row:
-		return null
+		return new_state
+
 	# 目标格为空
 	if new_state.board.get_unit(to_row, to_col) != null:
-		return null
-	# Z 消耗（Phase 3：移动/攻击消耗战争点）
+		return new_state
+
+	# Z 消耗（Phase 3: 移动消耗 Z）
 	var player = new_state.players[player_idx]
 	if player.resources["Z"] < 1:
-		return null
+		return new_state
 	player.resources["Z"] -= 1
+
+	# 执行移动
 	new_state.board.set_unit(from_row, from_col, null)
 	new_state.board.set_unit(to_row, to_col, unit)
+	unit.move_count += 1
 	unit.has_acted = true
 	new_state.action_log.append({"type": "move", "player": player_idx, "from": [from_row, from_col], "to": [to_row, to_col]})
 	return new_state
@@ -124,7 +136,8 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 		return null
 	if defender.owner_index == player_idx:
 		return null  # 不能打友方
-	if attacker.has_acted:
+	# 检查是否已攻击
+	if attacker.has_attacked:
 		return null
 	# 射程检查（简化：相邻四格 + 火炮全图）
 	if not _in_attack_range(attacker, from_row, from_col, target_row, target_col):
@@ -165,6 +178,7 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 		_counter_attack(attacker, defender, from_row, from_col, target_row, target_col, new_state)
 
 	attacker.has_acted = true
+	attacker.has_attacked = true
 	return new_state
 
 
