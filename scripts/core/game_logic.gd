@@ -42,6 +42,7 @@ static func purchase_card(state: BattleState, player_idx: int, card_id: String) 
 	player.resources["G"] -= card_data.cost_g
 	player.purchase_zone.erase(card_id)
 	player.hand.append(card_id)
+	player.hand_card_purchase_turn[card_id] = new_state.turn
 	return new_state
 
 
@@ -53,6 +54,11 @@ static func deploy_unit(state: BattleState, player_idx: int, card_id: String, ro
 	var card_data = CardDataLoader.cards.get(card_id)
 	if card_data == null:
 		return null
+	# Phase 3: 响应词条检查 — 本回合购买的卡只能在有"响应"词条时部署
+	var purchase_turn: int = player.hand_card_purchase_turn.get(card_id, -1)
+	if purchase_turn == new_state.turn:
+		if not card_data.abilities.has("响应"):
+			return new_state  # 本回合购买但无响应词条，不能部署
 	if player.resources["Z"] < card_data.cost_k:
 		return null
 	if col < 0 or col >= new_state.board.cols:
@@ -76,6 +82,7 @@ static func deploy_unit(state: BattleState, player_idx: int, card_id: String, ro
 	_init_unit_from_card(unit, card_data)
 	new_state.board.set_unit(row, col, unit)
 	new_state.action_log.append({"type": "deploy", "player": player_idx, "card_id": card_id, "row": row, "col": col})
+	_apply_guard(new_state, unit)
 	return new_state
 
 
@@ -122,11 +129,13 @@ static func move_unit(state: BattleState, player_idx: int, from_row: int, from_c
 	player.resources["Z"] -= 1
 
 	# 执行移动
+	_clear_guard(new_state, unit)
 	new_state.board.set_unit(from_row, from_col, null)
 	new_state.board.set_unit(to_row, to_col, unit)
 	unit.move_count += 1
 	unit.has_acted = true
 	new_state.action_log.append({"type": "move", "player": player_idx, "from": [from_row, from_col], "to": [to_row, to_col]})
+	_apply_guard(new_state, unit)
 	return new_state
 
 
@@ -164,6 +173,13 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 		return null
 	player.resources["Z"] -= 1
 
+	# Phase 3: 被守护单位伤害转移
+	if defender.is_guarded:
+		var guard_pos: Vector2i = defender.guarded_by
+		var guard_unit := new_state.board.get_unit(guard_pos.x, guard_pos.y)
+		if guard_unit != null and guard_unit.owner_index == defender.owner_index:
+			defender = guard_unit  # 攻击目标改为守护单位
+
 	# 伤害计算
 	var damage: int = attacker.attack
 	# Phase 3: 使用 firm_level 进行坚守减伤
@@ -185,6 +201,7 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 		if attacker.abilities.has("收缴"):
 			reward_g = int(card_data.cost_g * 0.50) if card_data != null else 0
 		player.resources["G"] += reward_g
+		_clear_guard(new_state, defender)
 		new_state.board.set_unit(target_row, target_col, null)
 		new_state.action_log.append({"type": "destroy", "card_id": defender.card_id, "reward_g": reward_g})
 	else:
@@ -216,6 +233,9 @@ static func start_turn(state: BattleState) -> BattleState:
 				unit.has_attacked = false
 				unit.move_count = 0
 				unit.deployed_this_turn = false
+	_apply_supply(new_state, new_state.active_player_index)
+	_apply_rear_repair(new_state, new_state.active_player_index)
+	_update_stealth_reveal(new_state)
 	new_state.phase = "purchase"
 	return new_state
 
@@ -415,6 +435,7 @@ static func _counter_attack(attacker: BattleState.UnitData, defender: BattleStat
 	attacker.defense -= counter_dmg
 	state.action_log.append({"type": "counter", "damage": counter_dmg})
 	if attacker.defense <= 0:
+		_clear_guard(state, attacker)
 		state.board.set_unit(atk_row, atk_col, null)
 		state.action_log.append({"type": "destroy", "card_id": attacker.card_id, "reward_g": 0})
 
@@ -463,3 +484,136 @@ static func _init_unit_from_card(unit: BattleState.UnitData, card_data: Resource
 		_:
 			unit.move_limit = 1
 			unit.can_move_after_attack = false
+
+#region Phase 3: 守护词条
+
+## 部署后有守护词条的单位，给相邻八格友方单位加"被守护"
+static func _apply_guard(state: BattleState, unit: BattleState.UnitData) -> void:
+	if not unit.abilities.has("守护"):
+		return
+	var row := unit.row
+	var col := unit.col
+	for dr in range(-1, 2):
+		for dc in range(-1, 2):
+			if dr == 0 and dc == 0:
+				continue
+			var nr := row + dr
+			var nc := col + dc
+			var neighbor := state.board.get_unit(nr, nc)
+			if neighbor != null and neighbor.owner_index == unit.owner_index:
+				neighbor.is_guarded = true
+				neighbor.guarded_by = Vector2i(row, col)
+
+
+## 守护单位离场/移动前，清除所有指向它的"被守护"
+static func _clear_guard(state: BattleState, unit: BattleState.UnitData) -> void:
+	for r in range(state.board.rows):
+		for c in range(state.board.cols):
+			var other := state.board.get_unit(r, c)
+			if other != null and other.guarded_by == Vector2i(unit.row, unit.col):
+				other.is_guarded = false
+				other.guarded_by = Vector2i(-1, -1)
+
+#endregion
+
+#region Phase 3: 视野判定
+
+## 视野范围判定（与攻击范围判定分开）
+static func _in_vision_range(vision_str: String, from_row: int, from_col: int, to_row: int, to_col: int, owner_idx: int) -> bool:
+	var dr := to_row - from_row  # 带符号的方向
+	var adr := abs(dr)
+	var adc := abs(to_col - from_col)
+	# 确定"前方"方向：P1(owner=0) 前方是行号增大，P2(owner=1) 前方是行号减小
+	var forward_dr := dr if owner_idx == 0 else -dr
+	match vision_str:
+		"adjacent_4":
+			return (adr + adc) == 1  # 仅上下左右
+		"adjacent_8":
+			return adr <= 1 and adc <= 1 and not (adr == 0 and adc == 0)
+		"adjacent_8_forward":
+			# 周围八格 + 向前第二格（共 12 格）
+			if adr <= 1 and adc <= 1 and not (adr == 0 and adc == 0):
+				return true
+			if forward_dr == 2 and adc == 0:
+				return true
+			return false
+		"front_3x2":
+			# 前方横向 3 列 × 2 行
+			return forward_dr >= 1 and forward_dr <= 2 and adc <= 1
+		"front_3x3":
+			# 前方横向 3 列 × 3 行
+			return forward_dr >= 1 and forward_dr <= 3 and adc <= 1
+		"frontline_only":
+			return dr == 0 and adc <= 1
+		"none":
+			return false
+		_:
+			return adr <= 1 and adc <= 1 and not (adr == 0 and adc == 0)
+
+#endregion
+
+#region Phase 3: 补给与后方修复
+
+## 补给词条：友方回合开始时，修复相邻一个已受伤单位
+static func _apply_supply(state: BattleState, player_idx: int) -> void:
+	for r in range(state.board.rows):
+		for c in range(state.board.cols):
+			var unit := state.board.get_unit(r, c)
+			if unit == null or unit.owner_index != player_idx:
+				continue
+			if unit.supply_level <= 0:
+				continue
+			# 找相邻八格中一个已受伤的友方单位
+			for dr in range(-1, 2):
+				for dc in range(-1, 2):
+					if dr == 0 and dc == 0:
+						continue
+					var neighbor := state.board.get_unit(r + dr, c + dc)
+					if neighbor != null and neighbor.owner_index == player_idx and neighbor.defense < neighbor.max_defense:
+						neighbor.defense = min(neighbor.max_defense, neighbor.defense + unit.supply_level)
+						state.action_log.append({"type": "supply", "from": [r, c], "to": [r + dr, c + dc], "amount": unit.supply_level})
+						return  # 只修复一个
+
+
+## 后方修复规则：处于后方（P1 行 0 / P2 行 4）的单位每回合恢复 1 防御力
+static func _apply_rear_repair(state: BattleState, player_idx: int) -> void:
+	var rear_row := 0 if player_idx == 0 else 4
+	for c in range(state.board.cols):
+		var unit := state.board.get_unit(rear_row, c)
+		if unit != null and unit.owner_index == player_idx and unit.defense < unit.max_defense:
+			unit.defense = min(unit.max_defense, unit.defense + 1)
+			state.action_log.append({"type": "rear_repair", "row": rear_row, "col": c})
+
+#endregion
+
+#region Phase 3: 潜行揭露
+
+## 重新计算所有潜行单位的 revealed 状态
+## 处于敌方步兵或战斗机视野范围内的潜行单位 → revealed = true
+static func _update_stealth_reveal(state: BattleState) -> void:
+	for r in range(state.board.rows):
+		for c in range(state.board.cols):
+			var unit := state.board.get_unit(r, c)
+			if unit == null or not unit.stealthed:
+				continue
+			unit.revealed = false
+			var enemy_idx := 1 - unit.owner_index
+			# 检查是否有敌方步兵/战斗机能看到此位置
+			for er in range(state.board.rows):
+				for ec in range(state.board.cols):
+					var enemy := state.board.get_unit(er, ec)
+					if enemy == null or enemy.owner_index != enemy_idx:
+						continue
+					var enemy_card := CardDataLoader.cards.get(enemy.card_id)
+					if enemy_card == null:
+						continue
+					# 步兵或战斗机能发现潜行单位
+					if enemy_card.unit_class != "infantry" and enemy_card.unit_class != "fighter":
+						continue
+					if _in_vision_range(enemy_card.vision_range, er, ec, r, c, enemy_idx):
+						unit.revealed = true
+						break
+				if unit.revealed:
+					break
+
+#endregion
