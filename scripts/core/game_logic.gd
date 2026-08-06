@@ -146,6 +146,18 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 	# 射程检查（简化：相邻四格 + 火炮全图）
 	if not _in_attack_range(attacker, from_row, from_col, target_row, target_col):
 		return null
+	# Phase 3: 空战规则 — 陆军不能攻击空军
+	var attacker_card := CardDataLoader.cards.get(attacker.card_id)
+	var defender_card := CardDataLoader.cards.get(defender.card_id)
+	if attacker_card != null and defender_card != null:
+		var atk_is_air := _is_air_unit(attacker_card.unit_class)
+		var def_is_air := _is_air_unit(defender_card.unit_class)
+		# 陆军攻击空军 → 无效
+		if not atk_is_air and def_is_air:
+			return new_state
+		# 轰炸机攻击空军 → 无效（轰炸机只能打陆军）
+		if attacker_card.unit_class == "bomber" and def_is_air:
+			return new_state
 	# Z 消耗（Phase 3：移动/攻击消耗战争点）
 	var player = new_state.players[player_idx]
 	if player.resources["Z"] < 1:
@@ -154,11 +166,9 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 
 	# 伤害计算
 	var damage: int = attacker.attack
-	# 防守方坚守词条减伤
-	if defender.abilities.has("坚守"):
-		var firm_level := 1  # 默认坚守1
-		# 坦克坚守上限4由 CardData 设定，这里统一取1
-		damage = max(1, damage - firm_level)
+	# Phase 3: 使用 firm_level 进行坚守减伤
+	if defender.firm_level > 0:
+		damage = max(1, damage - defender.firm_level)
 	# 施加伤害
 	defender.defense -= damage
 
@@ -359,6 +369,11 @@ static func _in_attack_range(attacker: BattleState.UnitData, from_row: int, from
 	match range_str:
 		"adjacent_4":
 			return dr <= 1 and dc <= 1 and not (dr == 0 and dc == 0)
+		"adjacent_8":
+			return dr <= 1 and dc <= 1 and not (dr == 0 and dc == 0)
+		"column_and_neighbors":
+			# 本列 + 相邻两列，任意行
+			return abs(from_col - target_col) <= 1 and not (dr == 0 and dc == 0)
 		"global":
 			return true
 		_:
@@ -366,20 +381,37 @@ static func _in_attack_range(attacker: BattleState.UnitData, from_row: int, from
 
 
 static func _counter_attack(attacker: BattleState.UnitData, defender: BattleState.UnitData, atk_row: int, atk_col: int, def_row: int, def_col: int, state: BattleState) -> void:
-	# 攻击者有"突击" + 首次攻击 → 免反击
+	# Phase 2 规则：突击/冲锋首次攻击免反击
 	if attacker.abilities.has("突击") and attacker.deployed_this_turn:
 		return
-	# 攻击者有"冲锋" + 首次攻击 → 免反击（此处用 deployed_this_turn 近似）
 	if attacker.abilities.has("冲锋") and attacker.deployed_this_turn:
 		return
-	# 火炮不可被反击
-	var attacker_card = CardDataLoader.cards.get(attacker.card_id)
-	if attacker_card != null and attacker_card.unit_class == "artillery":
-		return
+
+	# Phase 3: 空战反击规则
+	var attacker_card := CardDataLoader.cards.get(attacker.card_id)
+	var defender_card := CardDataLoader.cards.get(defender.card_id)
+	if attacker_card != null and defender_card != null:
+		# 火炮不可被反击（Phase 2 规则，保留）
+		if attacker_card.unit_class == "artillery":
+			return
+		# 轰炸机无法反击
+		if defender_card.unit_class == "bomber":
+			return
+		# 非战斗机单位无法反击轰炸机
+		if attacker_card.unit_class == "bomber" and defender_card.unit_class != "fighter":
+			return
+		# 陆军被空军攻击：只有防空词条能反击
+		var def_is_air := _is_air_unit(defender_card.unit_class)
+		var atk_is_air := _is_air_unit(attacker_card.unit_class)
+		if atk_is_air and not def_is_air:
+			if not defender.abilities.has("防空"):
+				return
+
 	# 防守方反击
 	var counter_dmg := defender.attack
-	if attacker.abilities.has("坚守"):
-		counter_dmg = max(1, counter_dmg - 1)
+	# 坚守减伤（Phase 3: 使用 firm_level 替代固定值）
+	if attacker.firm_level > 0:
+		counter_dmg = max(1, counter_dmg - attacker.firm_level)
 	attacker.defense -= counter_dmg
 	state.action_log.append({"type": "counter", "damage": counter_dmg})
 	if attacker.defense <= 0:
