@@ -16,6 +16,18 @@ class UnitData:
 	@export var col: int = -1
 	@export var deployed_this_turn: bool = false
 
+	## Phase 3 新增字段
+	@export var stealthed: bool = false              # 是否有潜行词条
+	@export var revealed: bool = false               # 是否被敌方发现（每回合重新计算）
+	@export var has_attacked: bool = false           # 本回合是否已攻击
+	@export var move_count: int = 0                  # 本回合已移动次数
+	@export var move_limit: int = 1                  # 本回合移动上限（坦克 = 99）
+	@export var can_move_after_attack: bool = false  # 攻击后是否仍可移动（坦克 = true）
+	@export var is_guarded: bool = false             # 是否有守护单位保护
+	@export var guarded_by: Vector2i = Vector2i(-1, -1)  # 守护单位位置
+	@export var firm_level: int = 0                  # 坚守等级（0 = 无坚守）
+	@export var supply_level: int = 0                # 补给等级（0 = 无补给）
+
 
 class PlayerData:
 	extends Resource
@@ -27,6 +39,9 @@ class PlayerData:
 	@export var discard: Array[String] = []
 	@export var hand_limit: int = 7
 	@export var starter_card_id: String = ""
+
+	## Phase 3 新增：记录每张手牌的购买回合（用于响应词条判定）
+	@export var hand_card_purchase_turn: Dictionary = {}  # {card_id: turn_number}
 
 
 class BoardData:

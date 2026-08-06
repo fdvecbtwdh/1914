@@ -100,11 +100,11 @@ static func move_unit(state: BattleState, player_idx: int, from_row: int, from_c
 	# 目标格为空
 	if new_state.board.get_unit(to_row, to_col) != null:
 		return null
-	# K 消耗
+	# Z 消耗（Phase 3：移动/攻击消耗战争点）
 	var player = new_state.players[player_idx]
-	if player.resources["K"] < 1:
+	if player.resources["Z"] < 1:
 		return null
-	player.resources["K"] -= 1
+	player.resources["Z"] -= 1
 	new_state.board.set_unit(from_row, from_col, null)
 	new_state.board.set_unit(to_row, to_col, unit)
 	unit.has_acted = true
@@ -127,11 +127,11 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 	# 射程检查（简化：相邻四格 + 火炮全图）
 	if not _in_attack_range(attacker, from_row, from_col, target_row, target_col):
 		return null
-	# K 消耗
+	# Z 消耗（Phase 3：移动/攻击消耗战争点）
 	var player = new_state.players[player_idx]
-	if player.resources["K"] < 1:
+	if player.resources["Z"] < 1:
 		return null
-	player.resources["K"] -= 1
+	player.resources["Z"] -= 1
 
 	# 伤害计算
 	var damage: int = attacker.attack
@@ -169,19 +169,22 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 static func start_turn(state: BattleState) -> BattleState:
 	var new_state: BattleState = state.duplicate(true)
 	var player = new_state.players[new_state.active_player_index]
-	# G +150
+	# G +150（不变）
 	player.resources["G"] += 150
-	# K = 回合数, Z = 回合数
-	player.resources["K"] = new_state.turn
-	player.resources["Z"] = new_state.turn
+	# Z = 先手 1+2x / 后手 2+2x, 上限 25
+	player.resources["Z"] = _calc_z(new_state.active_player_index, new_state.turn)
+	# K = 回合数, 上限 10
+	player.resources["K"] = min(new_state.turn, 10)
 	# 抽 1 张
 	_draw_one(new_state, new_state.active_player_index)
-	# 重置单位行动标记
+	# 重置单位行动标记（Phase 3 扩展：同时重置 has_attacked, move_count）
 	for r in range(new_state.board.rows):
 		for c in range(new_state.board.cols):
 			var unit := new_state.board.get_unit(r, c)
 			if unit != null and unit.owner_index == new_state.active_player_index:
 				unit.has_acted = false
+				unit.has_attacked = false
+				unit.move_count = 0
 				unit.deployed_this_turn = false
 	new_state.phase = "purchase"
 	return new_state
@@ -225,6 +228,16 @@ static func check_victory(state: BattleState) -> int:
 	if p2_cols.size() == state.board.cols:
 		return 1
 	return -1
+
+
+## Phase 3: 战争点公式
+## 先手 (player_idx=0): 1 + 2×(turn−1) → 1, 3, 5, 7, ...
+## 后手 (player_idx=1): 2 + 2×(turn−1) → 2, 4, 6, 8, ...
+## 上限 25
+static func _calc_z(player_idx: int, turn: int) -> int:
+	var base := 1 if player_idx == 0 else 2
+	var z := base + 2 * (turn - 1)
+	return min(z, 25)
 
 
 static func _shuffle_deck(deck: Array) -> void:
