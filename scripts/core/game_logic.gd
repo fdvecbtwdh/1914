@@ -174,11 +174,15 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 	player.resources["Z"] -= 1
 
 	# Phase 3: 被守护单位伤害转移
+	var actual_row: int = target_row
+	var actual_col: int = target_col
 	if defender.is_guarded:
 		var guard_pos: Vector2i = defender.guarded_by
 		var guard_unit := new_state.board.get_unit(guard_pos.x, guard_pos.y)
 		if guard_unit != null and guard_unit.owner_index == defender.owner_index:
 			defender = guard_unit  # 攻击目标改为守护单位
+			actual_row = guard_pos.x
+			actual_col = guard_pos.y
 
 	# 伤害计算
 	var damage: int = attacker.attack
@@ -189,7 +193,7 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 	defender.defense -= damage
 
 	# 战斗记录
-	new_state.action_log.append({"type": "attack", "player": player_idx, "from": [from_row, from_col], "to": [target_row, target_col], "damage": damage})
+	new_state.action_log.append({"type": "attack", "player": player_idx, "from": [from_row, from_col], "to": [actual_row, actual_col], "damage": damage})
 
 	# 是否消灭
 	if defender.defense <= 0:
@@ -202,11 +206,11 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 			reward_g = int(card_data.cost_g * 0.50) if card_data != null else 0
 		player.resources["G"] += reward_g
 		_clear_guard(new_state, defender)
-		new_state.board.set_unit(target_row, target_col, null)
+		new_state.board.set_unit(actual_row, actual_col, null)
 		new_state.action_log.append({"type": "destroy", "card_id": defender.card_id, "reward_g": reward_g})
 	else:
 		# 反击（攻击者未被消灭时）
-		_counter_attack(attacker, defender, from_row, from_col, target_row, target_col, new_state)
+		_counter_attack(attacker, defender, from_row, from_col, actual_row, actual_col, new_state)
 
 	attacker.has_acted = true
 	attacker.has_attacked = true
@@ -577,7 +581,7 @@ static func _apply_supply(state: BattleState, player_idx: int) -> void:
 
 ## 后方修复规则：处于后方（P1 行 0 / P2 行 4）的单位每回合恢复 1 防御力
 static func _apply_rear_repair(state: BattleState, player_idx: int) -> void:
-	var rear_row := 0 if player_idx == 0 else 4
+	var rear_row := 0 if player_idx == 0 else state.board.rows - 1
 	for c in range(state.board.cols):
 		var unit := state.board.get_unit(rear_row, c)
 		if unit != null and unit.owner_index == player_idx and unit.defense < unit.max_defense:
