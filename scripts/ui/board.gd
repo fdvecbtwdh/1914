@@ -139,6 +139,7 @@ func _on_state_changed(new_state: BattleState) -> void:
 		return
 	_update_markers(new_state.active_player_index)
 	_render_units(new_state)
+	_update_visibility(new_state)
 
 
 func _update_markers(active_idx: int) -> void:
@@ -164,7 +165,6 @@ func _clear_unit_displays() -> void:
 
 
 func _render_units(state: BattleState) -> void:
-	var visible := _compute_visible_positions(state)
 	for row in range(state.board.rows):
 		for col in range(state.board.cols):
 			var unit: BattleState.UnitData = state.board.get_unit(row, col)
@@ -180,11 +180,43 @@ func _render_units(state: BattleState) -> void:
 				_set_card_bg(display, Color(0.3, 0.4, 0.5, 1.0))
 			else:
 				_set_card_bg(display, Color(0.48, 0.3, 0.32, 1.0))
-				if not (Vector2i(row, col) in visible):
-					_fog_display(display)
 			_update_unit_stats(display, unit.attack, unit.defense)
 			add_child(display)
 			_unit_displays[Vector2i(row, col)] = display
+
+
+## Phase 3: 迷雾可见性计算
+func _update_visibility(state: BattleState) -> void:
+	if state == null:
+		return
+	var viewer_idx := state.active_player_index
+	# 1. 收集本方所有单位的视野覆盖格子
+	var visible_cells: Dictionary = {}  # {Vector2i: true}
+	for r in range(state.board.rows):
+		for c in range(state.board.cols):
+			var unit := state.board.get_unit(r, c)
+			if unit == null or unit.owner_index != viewer_idx:
+				continue
+			var card_data: Resource = CardDataLoader.cards.get(unit.card_id)
+			if card_data == null:
+				continue
+			# 遍历棋盘所有格子，判定是否在此单位的视野内
+			for tr in range(state.board.rows):
+				for tc in range(state.board.cols):
+					if GameLogic._in_vision_range(card_data.vision_range, r, c, tr, tc, viewer_idx):
+						visible_cells[Vector2i(tr, tc)] = true
+	# 2. 更新每个敌方单位的显示
+	for r in range(state.board.rows):
+		for c in range(state.board.cols):
+			var unit := state.board.get_unit(r, c)
+			if unit == null or unit.owner_index == viewer_idx:
+				continue  # 跳过己方单位（始终可见）
+			var key := Vector2i(r, c)
+			var display: CardDisplay = _unit_displays.get(key)
+			if display == null or not is_instance_valid(display):
+				continue
+			var is_visible := visible_cells.has(key)
+			display.set_visible_to_enemy(is_visible, unit.stealthed, unit.revealed)
 
 
 func _compute_visible_positions(state: BattleState) -> Array[Vector2i]:
@@ -302,14 +334,6 @@ func _set_card_bg(display: Control, color: Color) -> void:
 		if child is ColorRect:
 			child.color = color
 			return
-
-
-func _fog_display(display: Control) -> void:
-	var fog := ColorRect.new()
-	fog.size = SLOT_SIZE
-	fog.color = Color(0.35, 0.1, 0.1, 1.0)  # 不透明暗红 — 敌方（被迷雾遮盖）
-	fog.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	display.add_child(fog)
 
 
 ## ── 部署高亮 ──

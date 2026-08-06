@@ -102,3 +102,35 @@ func _end_drag(mouse_pos: Vector2) -> void:
 		original_parent.add_child(self)
 		global_position = original_position
 		print("[CardDisplay] Drag cancelled — returned to original position")
+
+
+## Phase 3: 迷雾系统 — 控制敌方可见性
+var _fog_overlay: ColorRect = null
+var _is_fogged: bool = false
+var _unit_stealthed: bool = false
+var _unit_revealed: bool = false
+
+
+func set_visible_to_enemy(v: bool, stealthed: bool = false, revealed: bool = false) -> void:
+	_unit_stealthed = stealthed
+	_unit_revealed = revealed
+	# 潜行且未被发现 → 完全不显示
+	if stealthed and not revealed:
+		hide()
+		return
+	show()
+	if v:
+		# 可见：移除迷雾
+		_is_fogged = false
+		if _fog_overlay != null:
+			_fog_overlay.queue_free()
+			_fog_overlay = null
+	else:
+		# 不可见：添加灰色迷雾
+		if _fog_overlay == null:
+			_fog_overlay = ColorRect.new()
+			_fog_overlay.size = CARD_SIZE
+			_fog_overlay.color = Color(0.15, 0.15, 0.15, 1.0)
+			_fog_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			add_child(_fog_overlay)
+		_is_fogged = true

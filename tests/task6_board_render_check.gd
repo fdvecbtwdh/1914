@@ -121,10 +121,10 @@ func _test_fog_on_enemy_only(board: Node, _card_data: Resource) -> void:
 	board._on_state_changed(st)
 	var d00: CardDisplay = board._unit_displays[Vector2i(0, 0)]
 	var d44: CardDisplay = board._unit_displays[Vector2i(4, 4)]
-	# CardDisplay setup 有 3 个子节点（bg + name + stats），加迷雾后 4 个
-	_check(d00.get_child_count() == 3, "friendly unit has no fog (3 children), got %d" % d00.get_child_count())
-	_check(d44.get_child_count() == 4, "enemy unit has fog (4 children), got %d" % d44.get_child_count())
-	var fog = d44.get_child(3)
+	# CardDisplay setup 有 4 个子节点（bg + name + atk + def），加迷雾后 5 个
+	_check(d00.get_child_count() == 4, "friendly unit has no fog (4 children), got %d" % d00.get_child_count())
+	_check(d44.get_child_count() == 5, "enemy unit has fog (5 children), got %d" % d44.get_child_count())
+	var fog = d44.get_child(4)
 	_check(fog is ColorRect, "fog child is ColorRect")
 	_check((fog as ColorRect).color == Color(0.15, 0.15, 0.15, 1.0), "fog color is gray (0.15,0.15,0.15)")
 	_check((fog as ColorRect).mouse_filter == Control.MOUSE_FILTER_IGNORE, "fog passes through mouse input")
