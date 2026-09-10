@@ -4,3 +4,8 @@
 # OS / editor junk
 Thumbs.db
 Desktop.ini
+
+# Claude Code local files
+.claude/worktrees/
+.claude/settings.local.json
+claude-skip-perms.ps1
