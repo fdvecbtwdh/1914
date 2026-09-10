@@ -9,3 +9,7 @@ Desktop.ini
 .claude/worktrees/
 .claude/settings.local.json
 claude-skip-perms.ps1
+
+# Design docs & progress reports are kept local-only, never published
+/docs/
+/有关1914单位的一些设定.xlsx
