@@ -179,7 +179,9 @@ func _test_skip_phase() -> void:
 	tm.submit_action({"type": "skip_phase"})
 	_check(tm.battle_state.phase == "action", "deploy -> action")
 	tm.submit_action({"type": "skip_phase"})
-	_check(tm.battle_state.phase == "action", "action phase skip is no-op (use end_turn instead)")
+	# action 阶段的 skip_phase 自动结束回合，轮转到下一位玩家的 purchase 阶段
+	_check(tm.battle_state.phase == "purchase", "action phase skip ends turn (next player purchase)")
+	_check(tm.battle_state.active_player_index == 1, "turn passed to P2")
 
 
 func _test_deploy() -> void:
@@ -187,7 +189,8 @@ func _test_deploy() -> void:
 	print("[submit_action deploy]")
 	var tm := _make_tm()
 	tm.start_game(_deck(), _deck(), "test_infantry_01", "test_infantry_01")
-	tm.submit_action({"type": "purchase", "card_id": "test_infantry_01"})
+	# 直接把卡放进手牌（模拟上一回合购买的卡），规避响应词条的当回合部署限制
+	tm.battle_state.players[0].hand.append("test_infantry_01")
 	tm.submit_action({"type": "skip_phase"})  # purchase → deploy
 	tm.submit_action({"type": "deploy", "card_id": "test_infantry_01", "row": 0, "col": 0})
 	var st := tm.battle_state

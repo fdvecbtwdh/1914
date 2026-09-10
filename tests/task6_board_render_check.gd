@@ -108,8 +108,9 @@ func _test_render_positions_and_keys(board: Node, _card_data: Resource) -> void:
 	_check(d00 != null and d44 != null, "keys are Vector2i (0,0) and (4,4)")
 	_check(d00 is CardDisplay and d44 is CardDisplay, "both displays are CardDisplay")
 	_check(board._unit_displays.has(Vector2i(0, 1)) == false, "no display key at empty cell (0,1)")
-	var expected_44 := Vector2(200, 50) + Vector2(4 * 90, 4 * 115)
-	_check(d44.position == expected_44, "unit at (4,4) rendered at %s == expected %s" % [d44.position, expected_44])
+	# 期望位置用棋盘自身的网格偏移计算（响应式布局下偏移随视口变化，无头模式视口为 0）
+	var expected_44: Vector2 = board._grid_offset + Vector2(4 * board.SLOT_SPACING.x, 4 * board.SLOT_SPACING.y)
+	_check(d44.position == expected_44, "unit at (4,4) aligned to grid (%s == %s)" % [d44.position, expected_44])
 
 
 func _test_fog_on_enemy_only(board: Node, _card_data: Resource) -> void:

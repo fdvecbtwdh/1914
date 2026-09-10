@@ -62,7 +62,8 @@ func _count_title_labels(hand: Node) -> int:
 
 func _find_button_by_text(hand: Node, text: String) -> Button:
 	for child in hand.get_children():
-		if child is Button and child.text == text:
+		# 前缀匹配：按钮文案带快捷键后缀（如 "结束回合 [Enter]"）
+		if child is Button and child.text.begins_with(text):
 			return child
 	return null
 
@@ -112,7 +113,7 @@ func _test_setup_builds_persistent_ui() -> void:
 	_check(hand._player_label != null and hand._phase_label != null, "player/phase labels created")
 	_check(hand._g_label != null and hand._k_label != null and hand._z_label != null, "G/K/Z resource labels created")
 	_check(_find_button_by_text(hand, "结束回合") != null, "结束回合 button created")
-	_check(_find_button_by_text(hand, "跳过阶段") != null, "跳过阶段 button created")
+	_check(_find_button_by_text(hand, "下一阶段") != null, "下一阶段 button created")
 	# 动态区初始为空
 	_check(hand._purchase_buttons.is_empty(), "no purchase buttons before any state")
 	_check(hand._hand_buttons.is_empty(), "no hand buttons before any state")
@@ -131,9 +132,9 @@ func _test_state_changed_renders() -> void:
 	_check(hand._hand_buttons.size() == 1, "1 hand button, got %d" % hand._hand_buttons.size())
 	_check(_count_title_labels(hand) == 2, "2 section title labels, got %d" % _count_title_labels(hand))
 	var pbtn: Button = hand._purchase_buttons.get("infantry_01")
-	_check(pbtn != null and pbtn.text == "步兵 (G:30)", "purchase button text '%s'" % (pbtn.text if pbtn else ""))
+	_check(pbtn != null and pbtn.text == "[1] 步兵 (G:30)", "purchase button text '%s'" % (pbtn.text if pbtn else ""))
 	var hbtn: Button = hand._hand_buttons.get("artillery_01")
-	_check(hbtn != null and hbtn.text == "火炮 (Z:1) 5/2", "hand button text '%s'" % (hbtn.text if hbtn else ""))
+	_check(hbtn != null and hbtn.text == "[1] 火炮 (Z:1) 5/2", "hand button text '%s'" % (hbtn.text if hbtn else ""))
 	hand.queue_free()
 	tm.queue_free()
 
@@ -160,32 +161,43 @@ func _test_purchase_button_signal() -> void:
 	var result := _make_hand_and_tm()
 	var tm: TurnManager = result[0]
 	var hand: HandManager = result[1]
-	tm.state_changed.emit(_make_state())
+	var st := _make_state()
+	# 购买处理器会读取 turn_manager.get_state() 判断 G 是否足够
+	tm.battle_state = st
+	tm.state_changed.emit(st)
 	_captured_purchase = ""
 	hand.card_purchased.connect(func(id: String): _captured_purchase = id)
 	var btn: Button = hand._purchase_buttons["infantry_01"]
 	btn.pressed.emit()
 	_check(_captured_purchase == "infantry_01", "card_purchased emits 'infantry_01', got '%s'" % _captured_purchase)
+	# G 不足时不发信号
+	tm.battle_state.players[0].resources["G"] = 0
+	_captured_purchase = ""
+	btn.pressed.emit()
+	_check(_captured_purchase == "", "no card_purchased when G insufficient, got '%s'" % _captured_purchase)
 	hand.queue_free()
 	tm.queue_free()
 
 
 func _test_deploy_button_signal() -> void:
-	print("[deploy button emits card_deployed(card_id, -1, -1)]")
+	print("[deploy button selects card for click-deployment]")
 	var result := _make_hand_and_tm()
 	var tm: TurnManager = result[0]
 	var hand: HandManager = result[1]
-	tm.state_changed.emit(_make_state())
-	_captured_deploy_id = ""
-	_captured_deploy_row = -99
-	_captured_deploy_col = -99
-	hand.card_deployed.connect(func(id: String, r: int, c: int):
-		_captured_deploy_id = id; _captured_deploy_row = r; _captured_deploy_col = c
-	)
+	var st := _make_state()
+	tm.battle_state = st
+	tm.state_changed.emit(st)
 	var btn: Button = hand._hand_buttons["artillery_01"]
+	# deploy 阶段点击手牌卡 → 进入待部署选中状态（部署改为点选棋盘格完成）
 	btn.pressed.emit()
-	_check(_captured_deploy_id == "artillery_01", "card_deployed emits 'artillery_01', got '%s'" % _captured_deploy_id)
-	_check(_captured_deploy_row == -1 and _captured_deploy_col == -1, "row/col placeholders -1,-1 (Task 8), got (%d,%d)" % [_captured_deploy_row, _captured_deploy_col])
+	_check(hand.get_pending_deploy_card() == "artillery_01", "hand button press selects card for deploy")
+	# 再次点击同一张卡 → 取消选中
+	btn.pressed.emit()
+	_check(hand.get_pending_deploy_card() == "", "second press cancels selection")
+	# Z 不足时不选中
+	tm.battle_state.players[0].resources["Z"] = 0
+	btn.pressed.emit()
+	_check(hand.get_pending_deploy_card() == "", "no selection when Z insufficient")
 	hand.queue_free()
 	tm.queue_free()
 
@@ -200,7 +212,7 @@ func _test_control_button_signals() -> void:
 	hand.end_turn_pressed.connect(func(): _end_emitted = true)
 	hand.skip_phase_pressed.connect(func(): _skip_emitted = true)
 	var end_btn := _find_button_by_text(hand, "结束回合")
-	var skip_btn := _find_button_by_text(hand, "跳过阶段")
+	var skip_btn := _find_button_by_text(hand, "下一阶段")
 	end_btn.pressed.emit()
 	skip_btn.pressed.emit()
 	_check(_end_emitted, "end_turn_pressed emitted")
@@ -229,7 +241,7 @@ func _test_clear_dynamic_ui_frees_buttons_and_titles() -> void:
 	_check(_count_title_labels(hand) == 0, "no active title labels remain after clear, got %d" % _count_title_labels(hand))
 	# 持久按钮不受影响
 	_check(not _find_button_by_text(hand, "结束回合").is_queued_for_deletion(), "结束回合 button survives clear")
-	_check(not _find_button_by_text(hand, "跳过阶段").is_queued_for_deletion(), "跳过阶段 button survives clear")
+	_check(not _find_button_by_text(hand, "下一阶段").is_queued_for_deletion(), "下一阶段 button survives clear")
 	_check(not hand._turn_label.is_queued_for_deletion(), "turn label survives clear")
 	_check(not hand._g_label.is_queued_for_deletion(), "resource label survives clear")
 	hand.queue_free()

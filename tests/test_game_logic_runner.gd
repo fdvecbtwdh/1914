@@ -127,7 +127,20 @@ func _test_deploy_unit() -> void:
 	var st := GameLogic.start_turn(_make_init_state())
 	var pid := "test_infantry_01"
 	st = GameLogic.purchase_card(st, 0, pid)
-	# 合法部署：P1 行 0
+	# Phase 3 响应规则：本回合购买的卡（无响应词条）当回合不能部署 — no-op
+	var st_noop := GameLogic.deploy_unit(st, 0, pid, 0, 0)
+	_check(st_noop != null, "same-turn deploy without response returns state")
+	_check(st_noop.board.get_unit(0, 0) == null, "same-turn deploy without response places no unit")
+	_check(st_noop.players[0].resources["Z"] == 1, "same-turn deploy without response spends no Z")
+	_check(st_noop.players[0].hand.has(pid), "same-turn deploy without response keeps card in hand")
+	# Phase 3 响应词条：本回合购买的卡可立即部署
+	var st_resp := GameLogic.start_turn(_make_init_state())
+	st_resp.players[0].purchase_zone.append("infantry_03")
+	st_resp = GameLogic.purchase_card(st_resp, 0, "infantry_03")
+	var st_resp2 := GameLogic.deploy_unit(st_resp, 0, "infantry_03", 0, 0)
+	_check(st_resp2 != null and st_resp2.board.get_unit(0, 0) != null, "response card deployable same turn")
+	# 正常部署：模拟上一回合购买的卡
+	st.players[0].hand_card_purchase_turn[pid] = st.turn - 1
 	var st2 := GameLogic.deploy_unit(st, 0, pid, 0, 0)
 	var unit := st2.board.get_unit(0, 0)
 	_check(unit != null, "unit placed at (0,0)")
@@ -153,6 +166,7 @@ func _test_move_unit() -> void:
 	var st := GameLogic.start_turn(_make_init_state())
 	var pid := "test_infantry_01"
 	st = GameLogic.purchase_card(st, 0, pid)
+	st.players[0].hand_card_purchase_turn[pid] = st.turn - 1
 	st = GameLogic.deploy_unit(st, 0, pid, 0, 0)
 	st.players[0].resources["Z"] = 1
 	# 前进一格
@@ -161,16 +175,18 @@ func _test_move_unit() -> void:
 	_check(u != null and st2.board.get_unit(0, 0) == null, "unit moved to (1,0)")
 	_check(u != null and u.has_acted, "unit marked has_acted")
 	_check(st2.players[0].resources["Z"] == 0, "Z deducted by 1")
-	# 后退一格（P1 禁止 to_row < from_row）
-	var st3 := GameLogic.move_unit(st, 0, 0, 0, -1, 0)
-	_check(st3 == null, "P1 cannot move backward (returns null)")
-	# 越界保护
-	var st4 := GameLogic.move_unit(st, 0, 0, 0, 99, 0)
-	_check(st4 == null, "out-of-bounds move rejected (returns null)")
-	_check(st.players[0].resources["Z"] == 1, "no Z spent on out-of-bounds move")
-	# 已有行动单位不可再动
-	var st5 := GameLogic.move_unit(GameLogic.move_unit(st, 0, 0, 0, 1, 0), 0, 1, 0, 2, 0)
-	_check(st5 == null, "acted unit cannot move again (returns null)")
+	# 后退一格（P1 禁止 to_row < from_row）— no-op（用未行动的单位单独验证方向规则）
+	st2.players[0].resources["Z"] = 5
+	_place_unit(st2, 0, 1, 1, 2, 3)
+	var st3 := GameLogic.move_unit(st2, 0, 1, 1, 0, 1)
+	_check(st3.board.get_unit(1, 1) != null and st3.board.get_unit(0, 1) == null, "P1 cannot move backward (no-op)")
+	# 越界保护 — no-op
+	var st4 := GameLogic.move_unit(st2, 0, 1, 1, 99, 0)
+	_check(st4.board.get_unit(1, 1) != null, "out-of-bounds move rejected (no-op)")
+	# 已有行动单位不可再动 — no-op
+	var st5 := GameLogic.move_unit(st2, 0, 1, 0, 2, 0)
+	_check(st5.board.get_unit(1, 0) != null and st5.board.get_unit(2, 0) == null, "acted unit cannot move again (no-op)")
+	_check(st5.players[0].resources["Z"] == 5, "no Z spent on invalid moves")
 
 
 func _test_attack_unit() -> void:

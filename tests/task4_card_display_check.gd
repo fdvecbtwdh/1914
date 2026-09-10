@@ -64,7 +64,7 @@ func _test_setup_idempotent(data: Resource) -> void:
 	card.setup(data)
 	var second = card.get_child_count()
 	_check(first == second, "setup() twice does not duplicate children (%d == %d)" % [first, second])
-	_check(first == 3, "card has 3 children (bg + name label + stats label), got %d" % first)
+	_check(first == 4, "card has 4 children (bg + name label + atk label + def label), got %d" % first)
 
 
 func _test_control_props(data: Resource) -> void:
