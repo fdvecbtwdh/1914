@@ -233,6 +233,10 @@ func _try_select_for_deploy(card_id: String) -> void:
 	var player = state.players[state.active_player_index]
 	if player.resources["Z"] < card_data.cost_k:
 		return  # Z 不够
+	# 响应词条：本回合购买的卡（无响应）当回合不能部署，不给予选中
+	var purchase_turn: int = player.hand_card_purchase_turn.get(card_id, -1)
+	if purchase_turn == state.turn and not card_data.abilities.has("响应"):
+		return
 	# 检查是否有合法部署位置
 	var deploy_rows: Array[int] = GameLogic.get_deployable_rows(state, state.active_player_index, card_id)
 	if deploy_rows.is_empty():
