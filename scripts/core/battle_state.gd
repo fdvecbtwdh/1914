@@ -20,6 +20,7 @@ class UnitData:
 	@export var stealthed: bool = false              # 是否有潜行词条
 	@export var revealed: bool = false               # 是否被敌方发现（每回合重新计算）
 	@export var has_attacked: bool = false           # 本回合是否已攻击
+	@export var attack_count: int = 0                # 累计攻击次数（冲锋：首次攻击免反击）
 	@export var move_count: int = 0                  # 本回合已移动次数
 	@export var move_limit: int = 1                  # 本回合移动上限（坦克 = 99）
 	@export var can_move_after_attack: bool = false  # 攻击后是否仍可移动（坦克 = true）

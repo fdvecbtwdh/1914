@@ -82,7 +82,7 @@ static func deploy_unit(state: BattleState, player_idx: int, card_id: String, ro
 	_init_unit_from_card(unit, card_data)
 	new_state.board.set_unit(row, col, unit)
 	new_state.action_log.append({"type": "deploy", "player": player_idx, "card_id": card_id, "row": row, "col": col})
-	_apply_guard(new_state, unit)
+	_refresh_guards(new_state)   # 新单位入场后重算全图守护关系
 	return new_state
 
 
@@ -129,13 +129,12 @@ static func move_unit(state: BattleState, player_idx: int, from_row: int, from_c
 	player.resources["Z"] -= 1
 
 	# 执行移动
-	_clear_guard(new_state, unit)
 	new_state.board.set_unit(from_row, from_col, null)
 	new_state.board.set_unit(to_row, to_col, unit)
 	unit.move_count += 1
 	unit.has_acted = true
 	new_state.action_log.append({"type": "move", "player": player_idx, "from": [from_row, from_col], "to": [to_row, to_col]})
-	_apply_guard(new_state, unit)
+	_refresh_guards(new_state)   # 位置变化后重算全图守护关系
 	return new_state
 
 
@@ -167,6 +166,12 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 		# 轰炸机攻击空军 → 无效（轰炸机只能打陆军）
 		if attacker_card.unit_class == "bomber" and def_is_air:
 			return new_state
+	# 潜行：未揭示的敌方潜行单位不可被作为攻击目标
+	if defender.stealthed and not defender.revealed and defender.owner_index != player_idx:
+		return new_state
+	# 设计：标准单位移动或攻击共一次（移动后不可再攻击）
+	if attacker.move_limit <= 1 and not attacker.can_move_after_attack and attacker.has_acted:
+		return null
 	# Z 消耗（Phase 3：移动/攻击消耗战争点）
 	var player = new_state.players[player_idx]
 	if player.resources["Z"] < 1:
@@ -205,7 +210,6 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 		if attacker.abilities.has("收缴"):
 			reward_g = int(card_data.cost_g * 0.50) if card_data != null else 0
 		player.resources["G"] += reward_g
-		_clear_guard(new_state, defender)
 		new_state.board.set_unit(actual_row, actual_col, null)
 		new_state.action_log.append({"type": "destroy", "card_id": defender.card_id, "reward_g": reward_g})
 	else:
@@ -214,6 +218,8 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 
 	attacker.has_acted = true
 	attacker.has_attacked = true
+	attacker.attack_count += 1
+	_refresh_guards(new_state)   # 击杀/守护变化后重算全图守护关系
 	return new_state
 
 
@@ -355,13 +361,8 @@ static func get_deployable_rows(state: BattleState, player_idx: int, card_id: St
 	var front_occupied := _row_has_friendly(state, player_idx, front_row)
 
 	match unit_class:
-		"infantry":
-			# 后方始终可部署；占领前线后可部署到前线
-			rows.append(back_row)
-			if front_occupied:
-				rows.append(front_row)
-		"cavalry":
-			# 底线始终可部署 + 占领前线后可部署到前线
+		"infantry", "cavalry", "tank", "fighter", "bomber":
+			# 后方始终可部署；占领前线后可部署到前线（坦克/空军入场规则同步兵）
 			rows.append(back_row)
 			if front_occupied:
 				rows.append(front_row)
@@ -392,7 +393,7 @@ static func _in_attack_range(attacker: BattleState.UnitData, from_row: int, from
 	var dc = abs(target_col - from_col)
 	match range_str:
 		"adjacent_4":
-			return dr <= 1 and dc <= 1 and not (dr == 0 and dc == 0)
+			return (dr + dc) == 1  # 十字四格，不含斜角
 		"adjacent_8":
 			return dr <= 1 and dc <= 1 and not (dr == 0 and dc == 0)
 		"column_and_neighbors":
@@ -405,10 +406,10 @@ static func _in_attack_range(attacker: BattleState.UnitData, from_row: int, from
 
 
 static func _counter_attack(attacker: BattleState.UnitData, defender: BattleState.UnitData, atk_row: int, atk_col: int, def_row: int, def_col: int, state: BattleState) -> void:
-	# Phase 2 规则：突击/冲锋首次攻击免反击
+	# Phase 2 规则：突击部署当回合免反击；冲锋首次攻击免反击
 	if attacker.abilities.has("突击") and attacker.deployed_this_turn:
 		return
-	if attacker.abilities.has("冲锋") and attacker.deployed_this_turn:
+	if attacker.abilities.has("冲锋") and attacker.attack_count == 0:
 		return
 
 	# Phase 3: 空战反击规则
@@ -439,7 +440,6 @@ static func _counter_attack(attacker: BattleState.UnitData, defender: BattleStat
 	attacker.defense -= counter_dmg
 	state.action_log.append({"type": "counter", "damage": counter_dmg})
 	if attacker.defense <= 0:
-		_clear_guard(state, attacker)
 		state.board.set_unit(atk_row, atk_col, null)
 		state.action_log.append({"type": "destroy", "card_id": attacker.card_id, "reward_g": 0})
 
@@ -518,6 +518,30 @@ static func _clear_guard(state: BattleState, unit: BattleState.UnitData) -> void
 				other.is_guarded = false
 				other.guarded_by = Vector2i(-1, -1)
 
+
+## 全量重算守护关系（部署/移动/击杀后调用）：
+## 每个有守护词条的单位为其相邻八格友方提供保护 —— 保证相邻关系动态生效
+static func _refresh_guards(state: BattleState) -> void:
+	for r in range(state.board.rows):
+		for c in range(state.board.cols):
+			var u: BattleState.UnitData = state.board.get_unit(r, c)
+			if u != null:
+				u.is_guarded = false
+				u.guarded_by = Vector2i(-1, -1)
+	for r in range(state.board.rows):
+		for c in range(state.board.cols):
+			var guard: BattleState.UnitData = state.board.get_unit(r, c)
+			if guard == null or not guard.abilities.has("守护"):
+				continue
+			for dr in range(-1, 2):
+				for dc in range(-1, 2):
+					if dr == 0 and dc == 0:
+						continue
+					var neighbor: BattleState.UnitData = state.board.get_unit(r + dr, c + dc)
+					if neighbor != null and neighbor.owner_index == guard.owner_index:
+						neighbor.is_guarded = true
+						neighbor.guarded_by = Vector2i(r, c)
+
 #endregion
 
 #region Phase 3: 视野判定
@@ -558,7 +582,7 @@ static func _in_vision_range(vision_str: String, from_row: int, from_col: int, t
 
 #region Phase 3: 补给与后方修复
 
-## 补给词条：友方回合开始时，修复相邻一个已受伤单位
+## 补给词条：友方回合开始时，每个补给单位修复相邻一个已受伤友方
 static func _apply_supply(state: BattleState, player_idx: int) -> void:
 	for r in range(state.board.rows):
 		for c in range(state.board.cols):
@@ -567,8 +591,11 @@ static func _apply_supply(state: BattleState, player_idx: int) -> void:
 				continue
 			if unit.supply_level <= 0:
 				continue
-			# 找相邻八格中一个已受伤的友方单位
+			# 每个补给单位修复相邻八格中一个已受伤的友方单位
+			var healed := false
 			for dr in range(-1, 2):
+				if healed:
+					break
 				for dc in range(-1, 2):
 					if dr == 0 and dc == 0:
 						continue
@@ -576,7 +603,8 @@ static func _apply_supply(state: BattleState, player_idx: int) -> void:
 					if neighbor != null and neighbor.owner_index == player_idx and neighbor.defense < neighbor.max_defense:
 						neighbor.defense = min(neighbor.max_defense, neighbor.defense + unit.supply_level)
 						state.action_log.append({"type": "supply", "from": [r, c], "to": [r + dr, c + dc], "amount": unit.supply_level})
-						return  # 只修复一个
+						healed = true
+						break
 
 
 ## 后方修复规则：处于后方（P1 行 0 / P2 行 4）的单位每回合恢复 1 防御力
