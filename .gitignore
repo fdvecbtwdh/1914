@@ -10,6 +10,6 @@ Desktop.ini
 .claude/settings.local.json
 claude-skip-perms.ps1
 
-# Design docs & progress reports are kept local-only, never published
-/docs/
+# Unit settings spreadsheet stays local-only; docs are published (PDF excluded)
+*.pdf
 /有关1914单位的一些设定.xlsx
