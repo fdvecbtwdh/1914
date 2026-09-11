@@ -617,7 +617,38 @@ static func _update_stealth_reveal(state: BattleState) -> void:
 					if _in_vision_range(enemy_card.vision_range, er, ec, r, c, enemy_idx):
 						unit.revealed = true
 						break
-				if unit.revealed:
-					break
+					if unit.revealed:
+						break
+
+#endregion
+
+#region 联网同步
+
+## 状态指纹 — 两端对同一指令序列应产生相同指纹，不一致即失步
+## 纯字符串拼接 + hash，Godot hash() 在同版本引擎间稳定（两端同版本为前提）
+static func state_fingerprint(state: BattleState) -> String:
+	var parts: Array[String] = []
+	parts.append("t%d" % state.turn)
+	parts.append(state.phase)
+	parts.append("a%d" % state.active_player_index)
+	parts.append("w%d" % state.winner)
+	for pi in range(state.players.size()):
+		var p = state.players[pi]
+		parts.append("p%d:g%d,k%d,z%d" % [pi, p.resources["G"], p.resources["K"], p.resources["Z"]])
+		for cid in p.hand:
+			parts.append("h:" + cid)
+		for cid in p.purchase_zone:
+			parts.append("z:" + cid)
+		for cid in p.discard:
+			parts.append("x:" + cid)
+	for r in range(state.board.rows):
+		for c in range(state.board.cols):
+			var u = state.board.get_unit(r, c)
+			if u != null:
+				parts.append("u:%d,%d,%s,o%d,a%d,d%d,ac%s,at%s,mc%d" % [
+					r, c, u.card_id, u.owner_index, u.attack, u.defense,
+					str(u.has_acted), str(u.has_attacked), u.move_count])
+	parts.append("log%d" % state.action_log.size())
+	return str(hash(",".join(parts)))
 
 #endregion

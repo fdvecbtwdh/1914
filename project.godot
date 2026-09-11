@@ -11,13 +11,14 @@ config_version=5
 [application]
 
 config/name="1914"
-run/main_scene="res://scenes/battle.tscn"
+run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 
 [autoload]
 
 GameManager="*res://scripts/autoload/game_manager.gd"
 CardDataLoader="*res://scripts/core/card_data.gd"
+NetworkManager="*res://scripts/network/network_manager.gd"
 
 [display]
 

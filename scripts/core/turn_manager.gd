@@ -7,6 +7,7 @@ signal state_changed(new_state: BattleState)
 signal phase_changed(new_phase: String)
 signal game_over(winner: int)
 signal action_failed(reason: String)
+signal action_applied(action: Dictionary)
 
 var battle_state: BattleState = null
 
@@ -63,6 +64,7 @@ func submit_action(action: Dictionary) -> void:
 
 	battle_state = new_state
 	_emit_all()
+	action_applied.emit(action)
 
 	if battle_state.winner != -1:
 		game_over.emit(battle_state.winner)
