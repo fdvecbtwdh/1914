@@ -196,7 +196,7 @@ func _test_deploy() -> void:
 	var st := tm.battle_state
 	var u := st.board.get_unit(0, 0)
 	_check(u != null and u.owner_index == 0, "unit deployed at (0,0) by P1")
-	_check(st.players[0].resources["Z"] == 0, "Z deducted by cost_k(1) on deploy")
+	_check(st.players[0].resources["Z"] == 0, "Z deducted by cost_z(1) on deploy")
 	_check(not st.players[0].hand.has("test_infantry_01"), "card removed from hand after deploy")
 	# 非法部署（行 2 对 P1 不允许）→ GameLogic 返回 null，TurnManager 静默忽略
 	tm.submit_action({"type": "deploy", "card_id": "test_infantry_01", "row": 2, "col": 0})

@@ -53,7 +53,7 @@ func _load_card(file_path: String) -> void:
     card.type = data.get("type", "")
     card.unit_class = data.get("unit_class", "")
     card.cost_g = data.get("cost_g", 0)
-    card.cost_k = data.get("cost_k", 0)
+    card.cost_z = data.get("cost_z", 0)
     card.attack = data.get("attack", 0)
     card.defense = data.get("defense", 0)
     card.vision_range = data.get("vision_range", "")
@@ -74,7 +74,7 @@ class CardData:
     @export var type: String = ""           # "unit" 或 "order"
     @export var unit_class: String = ""     # cavalry/infantry/tank/fighter/bomber/artillery/fortification
     @export var cost_g: int = 0             # 生产所需经济
-    @export var cost_k: int = 0             # 部署所需指挥点
+    @export var cost_z: int = 0             # 部署所需指挥点
     @export var attack: int = 0
     @export var defense: int = 0
     @export var vision_range: String = ""   # adjacent_4 / adjacent_8_forward / front_3x2 等

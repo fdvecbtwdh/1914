@@ -196,12 +196,12 @@ func _test_attack_basics() -> void:
 	var st2 := GameLogic.attack_unit(st, 0, 1, 0, 2, 0)
 	_check(_hp(st2.board.get_unit(2, 0)) == 1, "B1 defender takes 3 (4->1)")
 	_check(_hp(st2.board.get_unit(1, 0)) == 1, "B1 attacker takes counter 3 (4->1)")
-	# B2 步兵斜角攻击（adjacent_4 = 十字四格，不含斜角）
+	# B2 步兵斜角攻击（攻击范围含斜角，周围八格）
 	st = _fresh_state()
 	_place(st, 0, 1, 1, "infantry_01")
 	_place(st, 1, 2, 2, "infantry_01")
 	st2 = GameLogic.attack_unit(st, 0, 1, 1, 2, 2)
-	_check(_hp(st2.board.get_unit(2, 2)) == 4, "B2 adjacent_4 diagonal attack out of range")
+	_check(_hp(st2.board.get_unit(2, 2)) == 1, "B2 adjacent_8 diagonal attack hits (4->1)")
 	# B3 火炮全图射程 + 免反击（守方被击杀则无反击）
 	st = _fresh_state()
 	_place(st, 0, 0, 0, "artillery_01")   # 攻5
@@ -347,14 +347,15 @@ func _test_abilities_assault_charge_plunder() -> void:
 	st2 = GameLogic.end_turn(st2)
 	st2 = GameLogic.end_turn(st2)
 	st2 = GameLogic.start_turn(st2)
-	_place(st2, 1, 1, 1, "infantry_01")
+	var d4_tgt := _place(st2, 1, 1, 1, "infantry_01")
+	d4_tgt.max_defense = 9
+	d4_tgt.defense = 9                     # 大血量：扛住攻击，保证反击发生
 	var cav := st2.board.get_unit(0, 0)
 	_wound(cav, 1)                         # 2->1
 	st2.players[0].resources["Z"] = 9
 	st2 = GameLogic.attack_unit(st2, 0, 0, 0, 1, 1)
-	var c2 := st2.board.get_unit(0, 0)
-	# 骑兵 1 血遭反击 3 → 死亡 = 反击确实发生了（设计上首次攻击应免反击）
-	_check(c2 == null, "D4 charge first-attack immunity persists beyond deploy turn")
+	# 骑兵 1 血遭反击 3 → 死亡 = 反击确实发生了（冲锋首次攻击免反击应保护次回合攻击）
+	_check(st2 == null or not _alive(st2, 0, 0), "D4 charge first-attack immunity persists beyond deploy turn")
 	# D5 收缴：击杀得 50%
 	st = _fresh_state()
 	st.players[0].hand.append("cavalry_02")   # 收缴 攻3

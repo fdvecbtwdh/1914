@@ -59,7 +59,7 @@ static func deploy_unit(state: BattleState, player_idx: int, card_id: String, ro
 	if purchase_turn == new_state.turn:
 		if not card_data.abilities.has("响应"):
 			return new_state  # 本回合购买但无响应词条，不能部署
-	if player.resources["Z"] < card_data.cost_k:
+	if player.resources["Z"] < card_data.cost_z:
 		return null
 	if col < 0 or col >= new_state.board.cols:
 		return null
@@ -68,7 +68,7 @@ static func deploy_unit(state: BattleState, player_idx: int, card_id: String, ro
 		return null
 	if new_state.board.get_unit(row, col) != null:
 		return null
-	player.resources["Z"] -= card_data.cost_k
+	player.resources["Z"] -= card_data.cost_z
 	player.hand.erase(card_id)
 	var unit: BattleState.UnitData = BattleState.UnitData.new()
 	unit.card_id = card_id

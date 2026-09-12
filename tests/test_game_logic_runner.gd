@@ -148,7 +148,7 @@ func _test_deploy_unit() -> void:
 		_check(unit.card_id == pid and unit.owner_index == 0, "unit card_id/owner correct")
 		_check(unit.attack == 2 and unit.defense == 3 and unit.max_defense == 3, "unit stats copied from CardData")
 		_check(unit.deployed_this_turn, "deployed_this_turn set")
-	_check(st2.players[0].resources["Z"] == 0, "Z deducted by cost_k(1)")
+	_check(st2.players[0].resources["Z"] == 0, "Z deducted by cost_z(1)")
 	_check(not st2.players[0].hand.has(pid), "card removed from hand")
 	_check(st2.action_log.size() > st.action_log.size(), "deploy logged")
 	# 非法部署：P1 行 2 不允许

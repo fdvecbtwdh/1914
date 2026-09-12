@@ -188,7 +188,7 @@ func _render_hand(state: BattleState) -> void:
 			continue
 		idx += 1
 		var btn := Button.new()
-		btn.text = "[%d] %s (Z:%d) %d/%d" % [idx, card_data.card_name, card_data.cost_k, card_data.attack, card_data.defense]
+		btn.text = "[%d] %s (Z:%d) %d/%d" % [idx, card_data.card_name, card_data.cost_z, card_data.attack, card_data.defense]
 		btn.position = Vector2(px, py)
 		btn.size.x = 170.0
 		btn.pressed.connect(_make_deploy_handler(card_id))
@@ -231,7 +231,7 @@ func _try_select_for_deploy(card_id: String) -> void:
 	if card_data == null:
 		return
 	var player = state.players[state.active_player_index]
-	if player.resources["Z"] < card_data.cost_k:
+	if player.resources["Z"] < card_data.cost_z:
 		return  # Z 不够
 	# 响应词条：本回合购买的卡（无响应）当回合不能部署，不给予选中
 	var purchase_turn: int = player.hand_card_purchase_turn.get(card_id, -1)

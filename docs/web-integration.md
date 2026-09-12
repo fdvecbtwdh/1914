@@ -129,7 +129,9 @@ def start():
    | flavor_text | flavor_text | ≤200 字符 |
    | art | —（暂不导入） | 网站后台可单独上传卡面图 |
 
-3. **开发注意事项**：
+3. **卡牌性质（tag，网站侧字段）**：网站为每张卡自动判定"正式/测试"性质——
+   游戏 `id` 含 `test` 或名称含 `测试` 即判为测试卡，其余为正式卡。该字段不在游戏 JSON 中，无需游戏侧维护。
+4. **开发注意事项**：
    - 新增卡牌字段 → 必须同步更新网站 `ALLOWED_FIELDS`、`app/gameconstants.py` 枚举与
      卡面模板 `_gcard.html`，否则网站静默丢弃/显示缺字。
    - 词条改名/等级规则变更 → 同步改 `gameconstants.ABILITIES` 与解析函数 `ability_name/ability_level`。
@@ -139,8 +141,10 @@ def start():
 
 ## 4. GitHub Issue 联动（可选）
 
-网站 Issue 可单向推送到本仓库（网站 → GitHub）。启用：网站 `.env` 设
-`GITHUB_TOKEN`（classic PAT，repo 权限）+ `GITHUB_REPO=fdvecbtwdh/1914`。
+网站 Issue 按"所属"分流单向推送（网站 → GitHub）：
+- 所属 = **游戏本体** → 推送到本仓库 `fdvecbtwdh/1914`
+- 所属 = **网页** → 推送到 `fdvecbtwdh/1914_website`
+启用：网站 `.env` 设 `GITHUB_TOKEN`（classic PAT，repo 权限，两个仓库都要能访问）。
 推送的 Issue 标题带 `[1914.fun #id]` 前缀，正文含网站回链。游戏侧无需任何配合。
 
 ---
