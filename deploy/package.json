@@ -1,0 +1,14 @@
+{
+  "name": "1914-relay-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "1914 卡牌对战轻量中继服务器（按房间转发的字节管道）",
+  "main": "relay-server.js",
+  "scripts": {
+    "start": "node relay-server.js"
+  },
+  "dependencies": {
+    "ws": "^8.17.0"
+  }
+}

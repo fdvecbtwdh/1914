@@ -16,7 +16,7 @@
 | t | 字段 | 说明 |
 |---|---|---|
 | `join` | `room: string(4-8位)` | 加入房间；不存在则创建并等待。重复 join 视为实现错误 |
-| `data` | `b64: string` | 游戏数据（base64），原样转发给房内另一人；房内只有自己时丢弃 |
+| `data` | 任意 JSON（原样透传，服务器不看内容） | 游戏数据，原样转发给房内另一人；房内只有自己时丢弃 |
 | `leave` | — | 离开房间 |
 
 服务器 → 客户端：
@@ -25,7 +25,7 @@
 |---|---|---|
 | `joined` | `peers: int` | join 应答：1=已入房等待，2=配对成功 |
 | `peer_left` | — | 另一人断开/离开 |
-| `data` | `b64: string` | 转发的游戏数据 |
+| `data` | 任意 JSON | 转发的游戏数据（原样） |
 | `error` | `msg: string` | 房间满(3人)/其他错误，随后可断开 |
 
 ## 行为规则
@@ -37,6 +37,9 @@
 5. 不限速不缓存不做语义校验（一期）；后续可加每秒帧数上限防滥用
 
 ## 参考实现（Node.js，约 40 行，可换任意语言）
+
+> 与 `deploy/relay-server.js` 相同，以该文件为准。客户端实际透传的游戏消息类型：
+> `{"t":"ready"}`、`{"t":"start","payload":{...}}`、`{"t":"action","action":{...}}`、`{"t":"check","fp":"..."}`（服务器均按 `data` 原样转发，不解析）。
 
 ```js
 import { WebSocketServer } from 'ws';
@@ -53,7 +56,7 @@ wss.on('connection', ws => {
       const peers = set.size;
       for (const c of set) c.send(JSON.stringify({ t: 'joined', peers }));
     } else if (m.t === 'data' && ws.room) {
-      for (const c of rooms.get(ws.room)) if (c !== ws) c.send(JSON.stringify({ t: 'data', b64: m.b64 }));
+      for (const c of rooms.get(ws.room)) if (c !== ws && c.readyState === 1) c.send(raw.toString());
     } else if (m.t === 'leave' && ws.room) {
       leave(ws, rooms);
     }

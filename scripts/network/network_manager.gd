@@ -7,6 +7,7 @@ extends Node
 
 signal net_status(status: String)          # 供菜单/UI 显示的文字状态
 signal connected_ok()                       # 客机：已连上房主
+signal relay_room_joined()                  # 中继：已入房（可开始等待开局）
 signal opponent_joined()                    # 房主：对手已连上
 signal game_start_received(payload: Dictionary)  # 双方：收到开局信息（seed/decks）
 signal action_received(action: Dictionary)  # 双方：收到远端指令（GameManager 接入 TurnManager）
@@ -40,6 +41,9 @@ var _found_hosts: Array = []                 # [{ip, name}]
 # ── WebSocket 中继（实验） ──
 var _relay_ws: WebSocketPeer = null
 var _relay_is_creator := false
+var _relay_room := ""
+var _relay_joined := false          # 已收到服务器 joined 应答（可发 ready）
+var _relay_join_sent := false       # 已发送 join 请求
 
 
 func _enter_tree() -> void:
@@ -103,9 +107,10 @@ func set_local_scene_ready() -> void:
 	if mode == Mode.HOSTING and _remote_scene_ready:
 		_send_start()
 	elif mode == Mode.JOINING:
-		# ENet：告诉房主我准备好了；中继：同义 JSON
+		# ENet：告诉房主我准备好了；中继：必须在入房后发（见 _relay_on_json "joined"）
 		if _relay_ws != null:
-			_relay_send({"t": "ready"})
+			if _relay_joined:
+				_relay_send({"t": "ready"})
 		else:
 			_rpc_client_ready.rpc_id(1)
 
@@ -163,6 +168,9 @@ func reset() -> void:
 	_remote_scene_ready = false
 	_client_peer_id = 0
 	_relay_is_creator = false
+	_relay_room = ""
+	_relay_joined = false
+	_relay_join_sent = false
 	_stop_udp()
 	_close_relay()
 	if get_multiplayer().multiplayer_peer != null:
@@ -361,6 +369,9 @@ func _relay_begin(url: String, room: String, create: bool) -> void:
 	reset()
 	_relay_ws = WebSocketPeer.new()
 	_relay_is_creator = create
+	_relay_room = room
+	_relay_joined = false
+	_relay_join_sent = false
 	var err := _relay_ws.connect_to_url(url)
 	if err != OK:
 		_emit_status("中继连接失败：%s" % url)
@@ -377,6 +388,9 @@ func _poll_relay() -> void:
 	_relay_ws.poll()
 	var state := _relay_ws.get_ready_state()
 	if state == WebSocketPeer.STATE_OPEN:
+		if not _relay_join_sent:
+			_relay_join_sent = true
+			_relay_send({"t": "join", "room": _relay_room})
 		while _relay_ws.get_available_packet_count() > 0:
 			var pkt := _relay_ws.get_packet()
 			_relay_on_json(JSON.parse_string(pkt.get_string_from_utf8()))
@@ -403,8 +417,13 @@ func _relay_on_json(m) -> void:
 				local_player_idx = 0
 			elif peers >= 2:
 				local_player_idx = 1
+			_relay_joined = true
 			is_network_game = true
+			relay_room_joined.emit()
 			_emit_status("中继房间就绪，等待双方场景加载…")
+			# 场景先于入房就绪的情况：入房后补发 ready
+			if mode == Mode.JOINING and _local_scene_ready:
+				_relay_send({"t": "ready"})
 		"ready":
 			_remote_scene_ready = true
 			if _relay_is_creator and _local_scene_ready:

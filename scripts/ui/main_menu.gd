@@ -9,6 +9,11 @@ var _discover_btn: Button
 var _title: Label
 var _subtitle: Label
 var _box: VBoxContainer
+var _relay_url_edit: LineEdit
+var _relay_room_edit: LineEdit
+
+## 默认中继服务器（部署后改成你的域名，见 docs/server-relay-protocol.md）
+const DEFAULT_RELAY_URL := "ws://127.0.0.1:24566"
 
 
 func _ready() -> void:
@@ -50,6 +55,31 @@ func _build_ui() -> void:
 	_add_button_to(row, "加入游戏", _on_join_pressed)
 
 	_discover_btn = _add_button(_box, "搜索局域网主机", _on_discover_pressed)
+
+	# ── 跨网联机（中继，手机流量/异地可用） ──
+	var relay_label := Label.new()
+	relay_label.text = "— 跨网联机 —"
+	relay_label.add_theme_font_size_override("font_size", 12)
+	relay_label.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+	_box.add_child(relay_label)
+
+	_relay_url_edit = LineEdit.new()
+	_relay_url_edit.text = DEFAULT_RELAY_URL
+	_relay_url_edit.placeholder_text = "中继服务器地址"
+	_relay_url_edit.custom_minimum_size = Vector2(260, 0)
+	_box.add_child(_relay_url_edit)
+
+	var relay_row := HBoxContainer.new()
+	relay_row.add_theme_constant_override("separation", 8)
+	_box.add_child(relay_row)
+	_relay_room_edit = LineEdit.new()
+	_relay_room_edit.text = "%04d" % (randi() % 10000)
+	_relay_room_edit.placeholder_text = "房间码"
+	_relay_room_edit.custom_minimum_size = Vector2(100, 0)
+	relay_row.add_child(_relay_room_edit)
+	_add_button_to(relay_row, "创建房间", _on_relay_create_pressed)
+	_add_button_to(relay_row, "加入房间", _on_relay_join_pressed)
+
 	_add_button(_box, "退出", func(): GameManager.quit_game())
 
 	_status = Label.new()
@@ -95,6 +125,29 @@ func _on_discover_pressed() -> void:
 	_status.text = "正在搜索局域网主机…（约 3 秒）"
 	NetworkManager.hosts_found.connect(func(_h): _discover_btn.disabled = false, CONNECT_ONE_SHOT)
 	NetworkManager.start_discovery(3.0)
+
+
+func _relay_args() -> Array:
+	var url := _relay_url_edit.text.strip_edges()
+	var room := _relay_room_edit.text.strip_edges().to_upper()
+	if url == "" or room == "":
+		_status.text = "请填写中继服务器地址和房间码"
+		return []
+	return [url, room]
+
+
+func _on_relay_create_pressed() -> void:
+	var args := _relay_args()
+	if args.is_empty():
+		return
+	GameManager.start_host_relay(args[0], args[1])
+
+
+func _on_relay_join_pressed() -> void:
+	var args := _relay_args()
+	if args.is_empty():
+		return
+	GameManager.start_join_relay(args[0], args[1])
 
 
 func _on_hosts_found(found: Array) -> void:

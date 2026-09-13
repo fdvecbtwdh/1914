@@ -94,6 +94,31 @@ func start_join_game(ip: String) -> void:
 		game_mode = GameMode.LOCAL
 
 
+## 跨网中继：创建房间（房主/P1）
+func start_host_relay(url: String, room: String) -> void:
+	game_mode = GameMode.HOST
+	NetworkManager.relay_create(url, room)
+	_enter_battle()
+
+
+## 跨网中继：加入房间（客机/P2）——等入房应答后进战斗
+func start_join_relay(url: String, room: String) -> void:
+	game_mode = GameMode.CLIENT
+	NetworkManager.relay_join(url, room)
+	var joined := [false]
+	var on_joined := func(): joined[0] = true
+	NetworkManager.relay_room_joined.connect(on_joined)
+	for i in range(150):
+		if joined[0] or not NetworkManager.is_network_game:
+			break
+		await get_tree().create_timer(0.1).timeout
+	NetworkManager.relay_room_joined.disconnect(on_joined)
+	if joined[0]:
+		_enter_battle()
+	else:
+		game_mode = GameMode.LOCAL
+
+
 func quit_game() -> void:
 	NetworkManager.leave()
 	get_tree().quit()
