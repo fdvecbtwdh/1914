@@ -13,3 +13,8 @@ claude-skip-perms.ps1
 # Unit settings spreadsheet stays local-only; docs are published (PDF excluded)
 *.pdf
 /有关1914单位的一些设定.xlsx
+
+# Android build environment (local only)
+/build-env/
+/build/
+*.apk
