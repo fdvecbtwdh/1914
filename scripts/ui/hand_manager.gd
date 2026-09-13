@@ -21,6 +21,7 @@ var _purchase_order: Array[String] = []   # 按渲染顺序排列的 card_id
 var _hand_order: Array[String] = []       # 按渲染顺序排列的 card_id
 var _end_btn: Button = null
 var _skip_btn: Button = null
+var _cancel_btn: Button = null
 var _g_label: Label = null
 var _k_label: Label = null
 var _z_label: Label = null
@@ -84,9 +85,18 @@ func _build_ui() -> void:
 	_end_btn.pressed.connect(func(): end_turn_pressed.emit())
 	add_child(_end_btn)
 
-	# ── 快捷键提示 ──
+	# ── 取消部署（触屏设备的显式取消路径；选中卡牌时才显示） ──
+	_cancel_btn = Button.new()
+	_cancel_btn.text = "取消部署"
+	_cancel_btn.position = Vector2(btn_x, 80)
+	_cancel_btn.size.x = BTN_W
+	_cancel_btn.visible = false
+	_cancel_btn.pressed.connect(cancel_deploy)
+	add_child(_cancel_btn)
+
+	# ── 操作提示（按平台显示对应方式） ──
 	var hint := Label.new()
-	hint.text = "1-5 选卡  Space 下一阶段  Enter 结束回合  Esc 取消"
+	hint.text = _input_hint_text()
 	hint.position = Vector2(10, vs.y - 38)
 	hint.add_theme_font_size_override("font_size", 10)
 	hint.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5, 1.0))
@@ -109,8 +119,18 @@ func _make_resource_label(pos: Vector2, text: String) -> Label:
 	return lbl
 
 
+## 按平台返回操作提示：桌面显示键盘快捷键，触屏设备提示点按操作
+func _input_hint_text() -> String:
+	match DisplayServer.get_name():
+		"Android", "iOS", "Web":
+			return "点按卡牌选择  点棋盘格部署  再点已选卡取消"
+	return "1-5 选卡  Space 下一阶段  Enter 结束回合  Esc 取消"
+
+
 func _on_state_changed(new_state: BattleState) -> void:
 	_pending_deploy_card = ""
+	if _cancel_btn != null:
+		_cancel_btn.visible = false
 	if _board and is_instance_valid(_board):
 		_board.clear_highlights()
 	_clear_dynamic_ui()
@@ -263,6 +283,8 @@ func get_pending_deploy_card() -> String:
 
 
 func _update_deploy_button_styles() -> void:
+	if _cancel_btn != null:
+		_cancel_btn.visible = _pending_deploy_card != ""
 	for card_id in _hand_buttons:
 		var btn: Button = _hand_buttons[card_id]
 		if not is_instance_valid(btn):
