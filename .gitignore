@@ -18,3 +18,4 @@ claude-skip-perms.ps1
 /build-env/
 /build/
 *.apk
+.zcode/
