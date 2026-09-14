@@ -127,6 +127,7 @@ def start():
    | vision_range / attack_range | 同名 | 枚举见 `app/gameconstants.py` RANGES |
    | abilities | abilities (JSON) | 词条名可带等级，如 `"坚守2"`；枚举见 ABILITIES |
    | rarity | rarity | common/silver/gold（铜/银/金） |
+| cost_oil | —（可选，暂无游戏侧字段） | 网站侧"油费"展示属性：游戏 JSON 未提供时导入保留现有值（新卡默认 0） |
    | flavor_text | flavor_text | ≤200 字符 |
    | art | —（暂不导入） | 网站后台可单独上传卡面图 |
 
