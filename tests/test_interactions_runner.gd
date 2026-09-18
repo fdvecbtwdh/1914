@@ -67,6 +67,8 @@ func _hp(u: BattleState.UnitData) -> int:
 
 
 func _alive(st: BattleState, r: int, c: int) -> bool:
+	if st == null:
+		return false  # 无效操作返回 null = 状态不变，目标格保持原样
 	return st.board.get_unit(r, c) != null
 
 
@@ -95,7 +97,7 @@ func _test_move_rules() -> void:
 	_check(_alive(st2, 2, 2), "A1 infantry diagonal forward move ok")
 	# A2 后退禁止
 	st2 = GameLogic.move_unit(st, 0, 1, 1, 0, 1)
-	_check(_alive(st2, 1, 1) and not _alive(st2, 0, 1), "A2 backward move blocked")
+	_check(st2 == null, "A2 backward move blocked (null)")
 	# A3 横向移动
 	st2 = GameLogic.move_unit(st, 0, 1, 1, 1, 2)
 	_check(_alive(st2, 1, 2), "A3 lateral move ok")
@@ -119,7 +121,7 @@ func _test_move_rules() -> void:
 	_place(st, 1, 3, 0, "infantry_01")
 	st2 = GameLogic.attack_unit(st, 0, 2, 0, 3, 0)
 	st2 = GameLogic.move_unit(st2, 0, 2, 0, 1, 0)
-	_check(not _alive(st2, 1, 0) and _alive(st2, 2, 0), "A6 infantry cannot move after attacking")
+	_check(st2 == null and _alive(st, 2, 0), "A6 infantry cannot move after attacking (null)")
 	# A7 步兵移动后不能再攻击（移动或攻击共一次）
 	st = _fresh_state()
 	_place(st, 0, 1, 0, "infantry_01")
@@ -159,30 +161,31 @@ func _test_move_rules() -> void:
 	_place(st, 0, 1, 0, "infantry_01")
 	_place(st, 0, 2, 0, "infantry_01")
 	st2 = GameLogic.move_unit(st, 0, 1, 0, 2, 0)
-	_check(_alive(st2, 1, 0) and _alive(st2, 2, 0), "A12 move onto occupied cell blocked")
+	_check(st2 == null and _alive(st, 1, 0) and _alive(st, 2, 0), "A12 move onto occupied cell blocked (null)")
 	# A13 越界
 	st = _fresh_state()
 	_place(st, 0, 0, 0, "infantry_01")
 	st2 = GameLogic.move_unit(st, 0, 0, 0, -1, 0)
-	st2 = GameLogic.move_unit(st2, 0, 0, 0, 0, 99)
-	_check(_alive(st2, 0, 0), "A13 out-of-bounds moves blocked")
+	_check(st2 == null, "A13a negative row move rejected (null)")
+	var st2e := GameLogic.move_unit(st, 0, 0, 0, 0, 99)
+	_check(st2e == null, "A13b out-of-bounds col move rejected (null)")
 	# A14 移动两格被拒
 	st = _fresh_state()
 	_place(st, 0, 0, 0, "infantry_01")
 	st2 = GameLogic.move_unit(st, 0, 0, 0, 2, 0)
-	_check(_alive(st2, 0, 0), "A14 two-cell move blocked")
+	_check(st2 == null and _alive(st, 0, 0), "A14 two-cell move blocked (null)")
 	# A15 Z 不足
 	st = _fresh_state()
 	_place(st, 0, 0, 0, "infantry_01")
 	st.players[0].resources["Z"] = 0
 	st2 = GameLogic.move_unit(st, 0, 0, 0, 1, 0)
-	_check(_alive(st2, 0, 0), "A15 move with no Z blocked")
+	_check(st2 == null and _alive(st, 0, 0), "A15 move with no Z blocked (null)")
 	# A16 P2 后退同样禁止
 	st = _fresh_state()
 	st.active_player_index = 1
 	_place(st, 1, 3, 0, "infantry_01")
 	st2 = GameLogic.move_unit(st, 1, 3, 0, 4, 0)
-	_check(_alive(st2, 3, 0) and not _alive(st2, 4, 0), "A16 P2 backward move blocked")
+	_check(st2 == null and _alive(st, 3, 0), "A16 P2 backward move blocked (null)")
 
 
 # ═══ B. 攻击基础 ═══
@@ -252,13 +255,15 @@ func _test_air_combat() -> void:
 	_place(st, 1, 2, 0, "fighter_01")
 	var z0: int = st.players[0].resources["Z"]
 	var st2 := GameLogic.attack_unit(st, 0, 1, 0, 2, 0)
-	_check(_hp(st2.board.get_unit(2, 0)) == 2 and st2.players[0].resources["Z"] == z0, "C1 ground cannot attack air (no Z loss)")
+	_check(st2 == null, "C1 ground cannot attack air (rejected, null)")
+	_check(st.players[0].resources["Z"] == z0, "C1 rejected attack costs no Z")
+	_check(_hp(st.board.get_unit(2, 0)) == 2, "C1 fighter unharmed")
 	# C2 坦克打轰炸机无效
 	st = _fresh_state()
 	_place(st, 0, 1, 0, "tank_01")
 	_place(st, 1, 2, 0, "bomber_01")
 	st2 = GameLogic.attack_unit(st, 0, 1, 0, 2, 0)
-	_check(_hp(st2.board.get_unit(2, 0)) == 1, "C2 tank cannot attack bomber")
+	_check(st2 == null and _hp(st.board.get_unit(2, 0)) == 1, "C2 tank cannot attack bomber (null)")
 	# C3 轰炸机打陆军：高伤且不被反击
 	st = _fresh_state()
 	_place(st, 0, 0, 0, "bomber_01")     # 攻6
@@ -272,8 +277,8 @@ func _test_air_combat() -> void:
 	_place(st, 1, 3, 0, "fighter_01")    # 防2
 	var z0c: int = st.players[0].resources["Z"]
 	st2 = GameLogic.attack_unit(st, 0, 0, 0, 3, 0)
-	_check(_hp(st2.board.get_unit(3, 0)) == 2, "C4 bomber cannot attack fighter")
-	_check(st2.players[0].resources["Z"] == z0c, "C4 rejected attack costs no Z")
+	_check(st2 == null and _hp(st.board.get_unit(3, 0)) == 2, "C4 bomber cannot attack fighter (null)")
+	_check(st.players[0].resources["Z"] == z0c, "C4 rejected attack costs no Z")
 	# C5 战斗机打战斗机：攻4 vs 防2 击杀 → 无反击
 	st = _fresh_state()
 	_place(st, 0, 0, 0, "fighter_01")    # 攻4 防2
@@ -501,15 +506,15 @@ func _test_stealth() -> void:
 	_place(st, 0, 0, 0, "fighter_01")                     # P1 攻击方
 	var stealth_f := _place(st, 1, 4, 0, "fighter_02")   # P2 潜行（同列射程）
 	stealth_f.revealed = false
-	var st2b := GameLogic.attack_unit(st, 0, 0, 0, 4, 0)
-	_check(_alive(st2b, 4, 0) and _hp(st2b.board.get_unit(4, 0)) == 1, "G4 cannot attack unrevealed stealth unit")
+	var st2c := GameLogic.attack_unit(st, 0, 0, 0, 4, 0)
+	_check(st2c == null and st.board.get_unit(4, 0) != null, "G4 cannot attack unrevealed stealth unit (null)")
 	# G5 已揭示的潜行单位可以被攻击
 	st = _fresh_state()
 	_place(st, 0, 0, 0, "fighter_01")
 	stealth_f = _place(st, 1, 4, 0, "fighter_02")
 	stealth_f.revealed = true
-	st2b = GameLogic.attack_unit(st, 0, 0, 0, 4, 0)
-	_check(not _alive(st2b, 4, 0), "G5 revealed stealth unit can be attacked")
+	var st2d := GameLogic.attack_unit(st, 0, 0, 0, 4, 0)
+	_check(st2d != null and not _alive(st2d, 4, 0), "G5 revealed stealth unit can be attacked")
 
 
 # ═══ H. 补给 / 后方修复 ═══
@@ -665,7 +670,7 @@ func _test_victory_and_edges() -> void:
 	st.players[0].resources["Z"] = 1
 	var s1 := GameLogic.move_unit(st, 0, 0, 0, 1, 0)
 	var s2 := GameLogic.move_unit(s1, 0, 1, 0, 2, 0)
-	_check(_alive(s1, 1, 0) and _alive(s2, 1, 0) and not _alive(s2, 2, 0), "K6 second action blocked when Z exhausted")
+	_check(_alive(s1, 1, 0) and s2 == null, "K6 second action blocked when Z exhausted (null)")
 	# K7 指纹：相同操作 → 相同指纹
 	st = _fresh_state()
 	var st_b := _fresh_state()

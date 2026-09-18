@@ -19,3 +19,4 @@ claude-skip-perms.ps1
 /build/
 *.apk
 .zcode/
+deploy/node_modules/

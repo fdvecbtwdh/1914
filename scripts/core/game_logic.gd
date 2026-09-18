@@ -37,6 +37,8 @@ static func purchase_card(state: BattleState, player_idx: int, card_id: String) 
 	var card_data = CardDataLoader.cards.get(card_id)
 	if card_data == null:
 		return null
+	if card_data.type != "unit":
+		return null  # 指令卡（order）走指令区流程，当前阶段未实现
 	if player.resources["G"] < card_data.cost_g:
 		return null  # G 不够
 	player.resources["G"] -= card_data.cost_g
@@ -54,11 +56,13 @@ static func deploy_unit(state: BattleState, player_idx: int, card_id: String, ro
 	var card_data = CardDataLoader.cards.get(card_id)
 	if card_data == null:
 		return null
+	if card_data.type != "unit":
+		return null  # 非 unit 卡（指令卡等）不可部署
 	# Phase 3: 响应词条检查 — 本回合购买的卡只能在有"响应"词条时部署
 	var purchase_turn: int = player.hand_card_purchase_turn.get(card_id, -1)
 	if purchase_turn == new_state.turn:
 		if not card_data.abilities.has("响应"):
-			return new_state  # 本回合购买但无响应词条，不能部署
+			return null  # 本回合购买但无响应词条，不能部署（与其它失败路径统一返回 null）
 	if player.resources["Z"] < card_data.cost_z:
 		return null
 	if col < 0 or col >= new_state.board.cols:
@@ -90,42 +94,42 @@ static func move_unit(state: BattleState, player_idx: int, from_row: int, from_c
 	var new_state: BattleState = state.duplicate(true)
 	var unit: BattleState.UnitData = new_state.board.get_unit(from_row, from_col)
 	if unit == null or unit.owner_index != player_idx:
-		return new_state
+		return null  # 无效移动：状态不变
 
 	# 检查移动次数
 	if unit.move_count >= unit.move_limit:
-		return new_state
+		return null  # 无效移动：状态不变
 
 	# 标准单位：移动或攻击共一次（has_acted 检查）
 	# 坦克/空军：has_acted 不阻挡（由 move_count/has_attacked 分别控制）
 	if unit.move_limit <= 1 and not unit.can_move_after_attack:
 		if unit.has_acted:
-			return new_state
+			return null  # 无效移动：状态不变
 
 	# 目标格越界保护
 	if to_row < 0 or to_row >= new_state.board.rows or to_col < 0 or to_col >= new_state.board.cols:
-		return new_state
+		return null  # 无效移动：状态不变
 
 	# 八方向移动一格
 	var dr: int = abs(to_row - from_row)
 	var dc: int = abs(to_col - from_col)
 	if dr > 1 or dc > 1 or (dr == 0 and dc == 0):
-		return new_state
+		return null  # 无效移动：状态不变
 
 	# 禁止向后方移动
 	if player_idx == 0 and to_row < from_row:
-		return new_state
+		return null  # 无效移动：状态不变
 	if player_idx == 1 and to_row > from_row:
-		return new_state
+		return null  # 无效移动：状态不变
 
 	# 目标格为空
 	if new_state.board.get_unit(to_row, to_col) != null:
-		return new_state
+		return null  # 无效移动：状态不变
 
 	# Z 消耗（Phase 3: 移动消耗 Z）
 	var player = new_state.players[player_idx]
 	if player.resources["Z"] < 1:
-		return new_state
+		return null  # 无效移动：状态不变
 	player.resources["Z"] -= 1
 
 	# 执行移动
@@ -136,7 +140,6 @@ static func move_unit(state: BattleState, player_idx: int, from_row: int, from_c
 	new_state.action_log.append({"type": "move", "player": player_idx, "from": [from_row, from_col], "to": [to_row, to_col]})
 	_refresh_guards(new_state)   # 位置变化后重算全图守护关系
 	return new_state
-
 
 static func attack_unit(state: BattleState, player_idx: int, from_row: int, from_col: int, target_row: int, target_col: int) -> BattleState:
 	var new_state: BattleState = state.duplicate(true)
@@ -162,13 +165,13 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 		var def_is_air := _is_air_unit(defender_card.unit_class)
 		# 陆军攻击空军 → 无效
 		if not atk_is_air and def_is_air:
-			return new_state
+			return null  # 无效攻击：状态不变
 		# 轰炸机攻击空军 → 无效（轰炸机只能打陆军）
 		if attacker_card.unit_class == "bomber" and def_is_air:
-			return new_state
+			return null  # 无效攻击：状态不变
 	# 潜行：未揭示的敌方潜行单位不可被作为攻击目标
 	if defender.stealthed and not defender.revealed and defender.owner_index != player_idx:
-		return new_state
+		return null  # 无效攻击：状态不变
 	# 设计：标准单位移动或攻击共一次（移动后不可再攻击）
 	if attacker.move_limit <= 1 and not attacker.can_move_after_attack and attacker.has_acted:
 		return null
@@ -316,28 +319,6 @@ static func _draw_one(state: BattleState, player_idx: int) -> void:
 		return
 	var card_id: String = player.deck.pop_front()
 	player.purchase_zone.append(card_id)
-
-
-static func _can_deploy_at(player_idx: int, row: int, col: int, card_data: Resource) -> bool:
-	# 确认目标行在己方区域内
-	var back_row: int
-	var front_row: int
-	if player_idx == 0:
-		back_row = 0
-		front_row = 1
-		if row != 0 and row != 1:
-			return false
-	else:
-		back_row = 4
-		front_row = 3
-		if row != 3 and row != 4:
-			return false
-
-	# 检查该行是否有己方单位（"占领阵线"）
-	# 注意：_can_deploy_at 在 deploy_unit 中调用时 state 尚未修改，
-	# 但我们需要访问 board 来判断占领状态。
-	# 这里只做行列基本校验，具体规则放在 deploy_unit 中处理。
-	return true
 
 
 ## 返回指定单位类型可部署的行
@@ -490,34 +471,6 @@ static func _init_unit_from_card(unit: BattleState.UnitData, card_data: Resource
 			unit.can_move_after_attack = false
 
 #region Phase 3: 守护词条
-
-## 部署后有守护词条的单位，给相邻八格友方单位加"被守护"
-static func _apply_guard(state: BattleState, unit: BattleState.UnitData) -> void:
-	if not unit.abilities.has("守护"):
-		return
-	var row := unit.row
-	var col := unit.col
-	for dr in range(-1, 2):
-		for dc in range(-1, 2):
-			if dr == 0 and dc == 0:
-				continue
-			var nr := row + dr
-			var nc := col + dc
-			var neighbor: BattleState.UnitData = state.board.get_unit(nr, nc)
-			if neighbor != null and neighbor.owner_index == unit.owner_index:
-				neighbor.is_guarded = true
-				neighbor.guarded_by = Vector2i(row, col)
-
-
-## 守护单位离场/移动前，清除所有指向它的"被守护"
-static func _clear_guard(state: BattleState, unit: BattleState.UnitData) -> void:
-	for r in range(state.board.rows):
-		for c in range(state.board.cols):
-			var other: BattleState.UnitData = state.board.get_unit(r, c)
-			if other != null and other.guarded_by == Vector2i(unit.row, unit.col):
-				other.is_guarded = false
-				other.guarded_by = Vector2i(-1, -1)
-
 
 ## 全量重算守护关系（部署/移动/击杀后调用）：
 ## 每个有守护词条的单位为其相邻八格友方提供保护 —— 保证相邻关系动态生效
@@ -673,9 +626,11 @@ static func state_fingerprint(state: BattleState) -> String:
 		for c in range(state.board.cols):
 			var u = state.board.get_unit(r, c)
 			if u != null:
-				parts.append("u:%d,%d,%s,o%d,a%d,d%d,ac%s,at%s,mc%d" % [
+				parts.append("u:%d,%d,%s,o%d,a%d,d%d,ac%s,at%s,mc%d,dk%s,gu%s,gb%s,sv%s,rv%s,ck%d,fm%d,md%d" % [
 					r, c, u.card_id, u.owner_index, u.attack, u.defense,
-					str(u.has_acted), str(u.has_attacked), u.move_count])
+					str(u.has_acted), str(u.has_attacked), u.move_count,
+					str(u.deployed_this_turn), str(u.is_guarded), str(u.guarded_by),
+					str(u.stealthed), str(u.revealed), u.attack_count, u.firm_level, u.max_defense])
 	parts.append("log%d" % state.action_log.size())
 	return str(hash(",".join(parts)))
 

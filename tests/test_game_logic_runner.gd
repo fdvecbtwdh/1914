@@ -129,10 +129,9 @@ func _test_deploy_unit() -> void:
 	st = GameLogic.purchase_card(st, 0, pid)
 	# Phase 3 响应规则：本回合购买的卡（无响应词条）当回合不能部署 — no-op
 	var st_noop := GameLogic.deploy_unit(st, 0, pid, 0, 0)
-	_check(st_noop != null, "same-turn deploy without response returns state")
-	_check(st_noop.board.get_unit(0, 0) == null, "same-turn deploy without response places no unit")
-	_check(st_noop.players[0].resources["Z"] == 1, "same-turn deploy without response spends no Z")
-	_check(st_noop.players[0].hand.has(pid), "same-turn deploy without response keeps card in hand")
+	_check(st_noop == null, "same-turn deploy without response rejected (null)")
+	_check(st.players[0].resources["Z"] == 1, "same-turn deploy without response spends no Z")
+	_check(st.players[0].hand.has(pid), "same-turn deploy without response keeps card in hand")
 	# Phase 3 响应词条：本回合购买的卡可立即部署
 	var st_resp := GameLogic.start_turn(_make_init_state())
 	st_resp.players[0].purchase_zone.append("infantry_03")
@@ -179,14 +178,14 @@ func _test_move_unit() -> void:
 	st2.players[0].resources["Z"] = 5
 	_place_unit(st2, 0, 1, 1, 2, 3)
 	var st3 := GameLogic.move_unit(st2, 0, 1, 1, 0, 1)
-	_check(st3.board.get_unit(1, 1) != null and st3.board.get_unit(0, 1) == null, "P1 cannot move backward (no-op)")
-	# 越界保护 — no-op
+	_check(st3 == null, "P1 cannot move backward (null)")
+	# 越界保护
 	var st4 := GameLogic.move_unit(st2, 0, 1, 1, 99, 0)
-	_check(st4.board.get_unit(1, 1) != null, "out-of-bounds move rejected (no-op)")
-	# 已有行动单位不可再动 — no-op
+	_check(st4 == null, "out-of-bounds move rejected (null)")
+	# 已有行动单位不可再动
 	var st5 := GameLogic.move_unit(st2, 0, 1, 0, 2, 0)
-	_check(st5.board.get_unit(1, 0) != null and st5.board.get_unit(2, 0) == null, "acted unit cannot move again (no-op)")
-	_check(st5.players[0].resources["Z"] == 5, "no Z spent on invalid moves")
+	_check(st5 == null, "acted unit cannot move again (null)")
+	_check(st2.players[0].resources["Z"] == 5, "no Z spent on invalid moves")
 
 
 func _test_attack_unit() -> void:

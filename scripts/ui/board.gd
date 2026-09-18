@@ -21,8 +21,6 @@ signal slot_clicked(row: int, col: int)
 signal move_requested(from_row: int, from_col: int, to_row: int, to_col: int)
 signal attack_requested(from_row: int, from_col: int, target_row: int, target_col: int)
 
-## 当前最大行数（5 为基础，可扩展到 7）
-var max_rows: int = 5
 var turn_manager: TurnManager = null
 var _unit_displays: Dictionary = {}
 var _grid_offset: Vector2 = Vector2.ZERO
@@ -105,31 +103,11 @@ func _create_markers() -> void:
 	add_child(_p2_marker)
 
 
-func add_extra_row(is_top: bool) -> void:
-	if max_rows >= 7:
-		print("[Board] Max rows already 7, cannot add more")
-		return
-	var row_idx: int
-	if is_top:
-		row_idx = 0
-		for slot in get_tree().get_nodes_in_group("board_slot"):
-			slot.slot_row += 1
-			slot.position.y += SLOT_SPACING.y
-	else:
-		row_idx = max_rows
-	var slot_scene = load("res://scenes/ui_components/board_slot.tscn")
-	for col in range(GRID_SIZE):
-		var slot: BoardSlot = slot_scene.instantiate()
-		slot.slot_row = row_idx
-		slot.slot_col = col
-		slot.position = Vector2(
-			_grid_offset.x + col * SLOT_SPACING.x,
-			_grid_offset.y + row_idx * SLOT_SPACING.y
-		)
-		slot.add_to_group("board_slot")
-		add_child(slot)
-	max_rows += 1
-	print("[Board] Added extra row %s, total rows: %d" % ["top" if is_top else "bottom", max_rows])
+## 视角玩家：本地同屏=当前行动方；联网=本地玩家（对手回合己方单位不能被当成"敌方"）
+func _viewer_idx(state: BattleState) -> int:
+	if NetworkManager.is_network_game:
+		return NetworkManager.local_player_idx
+	return state.active_player_index
 
 
 func _on_state_changed(new_state: BattleState) -> void:
@@ -174,9 +152,10 @@ func _render_units(state: BattleState) -> void:
 			if card_data == null:
 				continue
 			var display := spawn_card(card_data)
+			display.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 棋盘单位不可拖拽（状态驱动渲染）
 			display.position = _grid_offset + Vector2(col * SLOT_SPACING.x, row * SLOT_SPACING.y)
-			# 己方原色，敌方微偏红
-			if unit.owner_index == state.active_player_index:
+			# 己方原色，敌方微偏红（联网按本地玩家视角）
+			if unit.owner_index == _viewer_idx(state):
 				_set_card_bg(display, Color(0.3, 0.4, 0.5, 1.0))
 			else:
 				_set_card_bg(display, Color(0.48, 0.3, 0.32, 1.0))
@@ -189,7 +168,7 @@ func _render_units(state: BattleState) -> void:
 func _update_visibility(state: BattleState) -> void:
 	if state == null:
 		return
-	var viewer_idx := state.active_player_index
+	var viewer_idx := _viewer_idx(state)
 	# 1. 收集本方所有单位的视野覆盖格子
 	var visible_cells: Dictionary = {}  # {Vector2i: true}
 	for r in range(state.board.rows):
@@ -217,105 +196,6 @@ func _update_visibility(state: BattleState) -> void:
 				continue
 			var is_visible := visible_cells.has(key)
 			display.set_visible_to_enemy(is_visible, unit.stealthed, unit.revealed)
-
-
-func _compute_visible_positions(state: BattleState) -> Array[Vector2i]:
-	var visible: Array[Vector2i] = []
-	for row in range(state.board.rows):
-		for col in range(state.board.cols):
-			var unit: BattleState.UnitData = state.board.get_unit(row, col)
-			if unit == null:
-				continue
-			if unit.owner_index != state.active_player_index:
-				continue
-			var card_data: Resource = CardDataLoader.cards.get(unit.card_id)
-			if card_data == null:
-				continue
-			var vr: String = card_data.vision_range
-			match vr:
-				"adjacent_4":
-					_add_adjacent_4_vision(visible, row, col, state)
-				"front_3x3":
-					_add_front_3x3_vision(visible, row, col, state)
-				"adjacent_8_forward":
-					_add_adjacent_8_forward_vision(visible, row, col, state)
-				"front_3x2":
-					_add_front_3x2_vision(visible, row, col, state)
-				"frontline_only":
-					_add_frontline_vision(visible, row, col, state)
-				_:
-					_add_adjacent_4_vision(visible, row, col, state)
-	return visible
-
-
-func _add_adjacent_4_vision(visible: Array[Vector2i], row: int, col: int, state: BattleState) -> void:
-	for dr in [-1, 0, 1]:
-		for dc in [-1, 0, 1]:
-			if dr == 0 and dc == 0:
-				continue
-			var tr: int = row + dr
-			var tc: int = col + dc
-			if tr >= 0 and tr < state.board.rows and tc >= 0 and tc < state.board.cols:
-				var v := Vector2i(tr, tc)
-				if not (v in visible):
-					visible.append(v)
-
-
-func _add_front_3x3_vision(visible: Array[Vector2i], row: int, col: int, state: BattleState) -> void:
-	# 向前方 3 列 × 3 行（P1 向下，P2 向上）
-	var unit := state.board.get_unit(row, col)
-	if unit == null:
-		return
-	var dir: int = 1 if unit.owner_index == 0 else -1
-	for r in range(1, 4):
-		var tr: int = row + dir * r
-		if tr < 0 or tr >= state.board.rows:
-			break
-		for dc in [-1, 0, 1]:
-			var tc: int = col + dc
-			if tc >= 0 and tc < state.board.cols:
-				var v := Vector2i(tr, tc)
-				if not (v in visible):
-					visible.append(v)
-
-
-func _add_adjacent_8_forward_vision(visible: Array[Vector2i], row: int, col: int, state: BattleState) -> void:
-	# 周围八格 + 向前额外一格
-	_add_adjacent_4_vision(visible, row, col, state)
-	var unit := state.board.get_unit(row, col)
-	if unit == null:
-		return
-	var dir: int = 1 if unit.owner_index == 0 else -1
-	var tr: int = row + dir * 2
-	var tc: int = col
-	if tr >= 0 and tr < state.board.rows:
-		var v := Vector2i(tr, tc)
-		if not (v in visible):
-			visible.append(v)
-
-
-func _add_front_3x2_vision(visible: Array[Vector2i], row: int, col: int, state: BattleState) -> void:
-	var unit := state.board.get_unit(row, col)
-	if unit == null:
-		return
-	var dir: int = 1 if unit.owner_index == 0 else -1
-	for r in range(1, 3):
-		var tr: int = row + dir * r
-		if tr < 0 or tr >= state.board.rows:
-			break
-		for dc in [-1, 0, 1]:
-			var tc: int = col + dc
-			if tc >= 0 and tc < state.board.cols:
-				var v := Vector2i(tr, tc)
-				if not (v in visible):
-					visible.append(v)
-
-
-func _add_frontline_vision(visible: Array[Vector2i], row: int, col: int, state: BattleState) -> void:
-	for c in range(state.board.cols):
-		var v := Vector2i(row, c)
-		if not (v in visible):
-			visible.append(v)
 
 
 func _update_unit_stats(display: Control, atk: int, df: int) -> void:
@@ -346,7 +226,7 @@ func highlight_deploy_zones(player_idx: int, card_id: String) -> void:
 		return
 	var deploy_rows: Array[int] = GameLogic.get_deployable_rows(state, player_idx, card_id)
 	for slot in get_tree().get_nodes_in_group("board_slot"):
-		if slot.slot_row in deploy_rows and slot.can_accept_card():
+		if slot.slot_row in deploy_rows and state.board.get_unit(slot.slot_row, slot.slot_col) == null:
 			slot.show_highlight(HIGHLIGHT_DEPLOY)
 
 
@@ -373,7 +253,7 @@ func _select_unit(row: int, col: int) -> void:
 	var unit: BattleState.UnitData = state.board.get_unit(row, col)
 	if unit == null:
 		return
-	if unit.owner_index != state.active_player_index:
+	if unit.owner_index != _viewer_idx(state):
 		return
 	# Standard units (move or attack once): blocked by has_acted
 	if unit.move_limit <= 1 and not unit.can_move_after_attack:
@@ -459,10 +339,13 @@ func _get_valid_attack_targets(from_row: int, from_col: int, state: BattleState)
 	var unit := state.board.get_unit(from_row, from_col)
 	if unit == null:
 		return targets
-	var card_data: Resource = CardDataLoader.cards.get(unit.card_id)
-	if card_data == null:
+	# 已攻击的单位本回合不能再攻击
+	if unit.has_attacked:
 		return targets
-	var range_str: String = card_data.attack_range
+	# Z 不足时任何攻击都无效
+	var player = state.players[unit.owner_index]
+	if player.resources["Z"] < 1:
+		return targets
 	for row in range(state.board.rows):
 		for col in range(state.board.cols):
 			var target := state.board.get_unit(row, col)
@@ -470,22 +353,23 @@ func _get_valid_attack_targets(from_row: int, from_col: int, state: BattleState)
 				continue
 			if target.owner_index == unit.owner_index:
 				continue
-			var dr: int = abs(row - from_row)
-			var dc: int = abs(col - from_col)
-			var in_range: bool = false
-			match range_str:
-				"adjacent_4":
-					in_range = dr <= 1 and dc <= 1 and not (dr == 0 and dc == 0)
-				"adjacent_8":
-					in_range = dr <= 1 and dc <= 1 and not (dr == 0 and dc == 0)
-				"column_and_neighbors":
-					in_range = abs(col - from_col) <= 1 and not (dr == 0 and dc == 0)
-				"global":
-					in_range = true
-				_:
-					in_range = dr <= 1 and dc <= 1 and not (dr == 0 and dc == 0)
-			if in_range:
-				targets.append(Vector2i(row, col))
+			# 射程判定复用引擎实现（与攻击合法性完全一致）
+			if not GameLogic._in_attack_range(unit, from_row, from_col, row, col):
+				continue
+			# 陆军打不了空军；轰炸机只能打陆军
+			var attacker_card: Resource = CardDataLoader.cards.get(unit.card_id)
+			var defender_card: Resource = CardDataLoader.cards.get(target.card_id)
+			if attacker_card != null and defender_card != null:
+				var atk_is_air := GameLogic._is_air_unit(attacker_card.unit_class)
+				var def_is_air := GameLogic._is_air_unit(defender_card.unit_class)
+				if not atk_is_air and def_is_air:
+					continue
+				if attacker_card.unit_class == "bomber" and def_is_air:
+					continue
+			# 未揭示的潜行单位不可被作为目标
+			if target.stealthed and not target.revealed:
+				continue
+			targets.append(Vector2i(row, col))
 	return targets
 
 

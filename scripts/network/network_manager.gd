@@ -26,6 +26,7 @@ enum Mode { IDLE, HOSTING, JOINING, IN_GAME }
 var mode: Mode = Mode.IDLE
 var local_player_idx := 0        # 房主恒为 P1(0)，客机恒为 P2(1)
 var is_network_game := false     # false = 本地同屏
+var opponent_left := false       # 对手已断开（对局作废，拒绝后续输入）
 
 var _local_scene_ready := false
 var _remote_scene_ready := false
@@ -68,7 +69,7 @@ func _process(_delta: float) -> void:
 func host_game(port: int = DEFAULT_PORT) -> Error:
 	reset()
 	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_server(port, 2)
+	var err := peer.create_server(port, 1)  # 仅允许 1 名对手，防覆盖 _client_peer_id
 	if err != OK:
 		_emit_status("创建主机失败（端口 %d 被占用？）" % port)
 		return err
@@ -164,10 +165,14 @@ func leave(reason: String = "") -> void:
 func reset() -> void:
 	mode = Mode.IDLE
 	is_network_game = false
+	opponent_left = false
+	local_player_idx = 0
 	_local_scene_ready = false
 	_remote_scene_ready = false
+	_join_deadline_ms = 0
 	_client_peer_id = 0
 	_relay_is_creator = false
+	_found_hosts = []
 	_relay_room = ""
 	_relay_joined = false
 	_relay_join_sent = false
@@ -192,6 +197,7 @@ func _on_peer_connected(id: int) -> void:
 
 func _on_peer_disconnected(_id: int) -> void:
 	if mode != Mode.IDLE:
+		opponent_left = true
 		opponent_disconnected.emit()
 		_emit_status("对手已离开")
 		# 注意：此处不立即 reset/close —— Android 上对局中断开时立刻销毁
@@ -209,6 +215,7 @@ func _on_connection_failed() -> void:
 
 
 func _on_server_disconnected() -> void:
+	opponent_left = true
 	opponent_disconnected.emit()
 	_emit_status("与主机断开")
 	reset()
@@ -379,6 +386,7 @@ func _relay_begin(url: String, room: String, create: bool) -> void:
 		_close_relay()
 		return
 	mode = Mode.JOINING if not create else Mode.HOSTING
+	is_network_game = true
 	_join_deadline_ms = Time.get_ticks_msec() + JOIN_TIMEOUT_MS + 5000
 	_emit_status("连接中继服务器…（房间 %s）" % room)
 
@@ -397,6 +405,8 @@ func _poll_relay() -> void:
 			_relay_on_json(JSON.parse_string(pkt.get_string_from_utf8()))
 	elif state == WebSocketPeer.STATE_CLOSED:
 		if mode != Mode.IDLE:
+			if _relay_joined:
+				opponent_left = true
 			opponent_disconnected.emit()
 			_emit_status("中继连接已关闭")
 			reset()
@@ -436,6 +446,7 @@ func _relay_on_json(m) -> void:
 		"check":
 			_handle_remote_check(str(m.get("fp", "")))
 		"peer_left":
+			opponent_left = true
 			opponent_disconnected.emit()
 			_emit_status("对手已离开")
 			reset()

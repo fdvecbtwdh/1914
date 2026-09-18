@@ -28,12 +28,12 @@ wss.on('connection', ws => {
       const peers = set.size;
       for (const c of set) c.send(JSON.stringify({ t: 'joined', peers }));
       console.log(`[join] room=${m.room} peers=${peers}`);
-    } else if (m.t === 'data' && ws.room) {
-      // 整条透传（不看游戏语义），房间内另一人原样收到
+    } else if (ws.room) {
+      // 除 join/leave 外的一切消息（ready/start/action/check/...）原样透传给房内另一人
       for (const c of rooms.get(ws.room)) {
         if (c !== ws && c.readyState === 1) c.send(raw.toString());
       }
-    } else if (m.t === 'leave' && ws.room) {
+    } else if (false) {
       leave(ws);
     }
   });

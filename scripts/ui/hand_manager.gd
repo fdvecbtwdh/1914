@@ -4,13 +4,11 @@ class_name HandManager
 ## 手牌/购买区/资源 UI — 从 BattleState 读取，响应 TurnManager 信号
 
 signal card_purchased(card_id: String)
-signal card_deployed(card_id: String, row: int, col: int)
 signal end_turn_pressed()
 signal skip_phase_pressed()
 
 ## 右侧面板配置
 const PANEL_MIN_X: float = 500.0
-const BUTTON_WIDTH: float = 100.0
 const CARD_BTN_HEIGHT: float = 32.0
 
 var turn_manager: TurnManager = null
@@ -29,12 +27,14 @@ var _phase_label: Label = null
 var _player_label: Label = null
 var _turn_label: Label = null
 var _pending_deploy_card: String = ""
+var _banner: Label = null
 
 
 func setup(tm: TurnManager) -> void:
 	turn_manager = tm
+	_build_ui()  # 先构建，再连接信号（避免 build 前的状态变更打到 null 控件）
 	turn_manager.state_changed.connect(_on_state_changed)
-	_build_ui()
+	turn_manager.game_over.connect(_on_game_over)
 
 
 func _get_panel_x() -> float:
@@ -95,6 +95,15 @@ func _build_ui() -> void:
 	add_child(_cancel_btn)
 
 	# ── 操作提示（按平台显示对应方式） ──
+	# ── 顶部中央横幅：回合归属 / 等待对手 / 胜负结果 ──
+	_banner = Label.new()
+	_banner.position = Vector2(vs.x / 2.0 - 150.0, 10)
+	_banner.size = Vector2(300.0, 26.0)
+	_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_banner.add_theme_font_size_override("font_size", 16)
+	add_child(_banner)
+
+	# ── 操作提示（按平台显示对应方式） ──
 	var hint := Label.new()
 	hint.text = _input_hint_text()
 	hint.position = Vector2(10, vs.y - 38)
@@ -140,6 +149,47 @@ func _on_state_changed(new_state: BattleState) -> void:
 	_update_resources(new_state)
 	_render_purchase_zone(new_state)
 	_render_hand(new_state)
+	_update_turn_ui(new_state)
+
+
+## 回合横幅 + 控制按钮可用性（联网按本地玩家视角，本地同屏按行动方）
+func _update_turn_ui(state: BattleState) -> void:
+	if _banner == null:
+		return
+	if state.winner != -1:
+		_banner.text = "玩家 %d 获胜！" % (state.winner + 1)
+		_banner.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+		_set_controls_enabled(false)
+		return
+	if NetworkManager.opponent_left:
+		_banner.text = "对手已断线，本局无效"
+		_banner.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
+		_set_controls_enabled(false)
+		return
+	var local := NetworkManager.local_player_idx if NetworkManager.is_network_game else state.active_player_index
+	if state.active_player_index == local:
+		_banner.text = "轮到你行动"
+		_banner.add_theme_color_override("font_color", Color(0.4, 1.0, 0.5))
+	else:
+		_banner.text = "等待对手行动…"
+		_banner.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	# 结束回合仅在 action 阶段可用
+	_end_btn.disabled = state.phase != "action"
+	_skip_btn.disabled = false
+
+
+func _on_game_over(winner: int) -> void:
+	if _banner != null:
+		_banner.text = "玩家 %d 获胜！" % (winner + 1)
+		_banner.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	_set_controls_enabled(false)
+
+
+func _set_controls_enabled(enabled: bool) -> void:
+	if _end_btn != null:
+		_end_btn.disabled = not enabled
+	if _skip_btn != null:
+		_skip_btn.disabled = not enabled
 
 
 func _update_info(state: BattleState) -> void:

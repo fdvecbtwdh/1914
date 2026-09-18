@@ -48,7 +48,6 @@ func setup(data: Resource) -> void:
 	def_label.position = Vector2(CARD_SIZE.x - 18, 80)
 	add_child(def_label)
 
-	print("[CardDisplay] Setup: %s" % data.card_name)
 
 
 func _gui_input(event: InputEvent) -> void:

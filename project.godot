@@ -13,6 +13,7 @@ config_version=5
 config/name="1914"
 run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
+config/icon="res://icon.png"
 
 [autoload]
 

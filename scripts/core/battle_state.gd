@@ -82,7 +82,6 @@ class BoardData:
 @export var phase: String = "draw"
 @export var active_player_index: int = 0
 @export var winner: int = -1
-@export var round_count: int = 0
 @export var action_log: Array[Dictionary] = []
 
 func setup(p1_deck: Array[String], p2_deck: Array[String], p1_starter: String, p2_starter: String) -> void:
@@ -99,5 +98,4 @@ func setup(p1_deck: Array[String], p2_deck: Array[String], p1_starter: String, p
 	phase = "draw"
 	active_player_index = 0
 	winner = -1
-	round_count = 0
 	action_log.clear()

@@ -12,6 +12,10 @@ var turn_manager: TurnManager = null
 
 var _battle_ready := false       # 当前 battle 场景是否已接线
 var _applying_remote := false    # 正在应用远端指令（抑制转发回环）
+var _entering_battle := false    # 防抖：菜单快速连点时只进一次战斗场景
+
+var _on_net_action_fn: Callable
+var _on_net_start_fn: Callable
 
 
 func _ready() -> void:
@@ -38,6 +42,22 @@ func _auto_enter() -> void:
 		if arg.begins_with("--net=join:"):
 			game_mode = GameMode.CLIENT
 			start_join_game(arg.substr("--net=join:".length()))
+			if want_auto:
+				_spawn_autopilot()
+			return
+		if arg.begins_with("--relay=host:") or arg.begins_with("--relay=join:"):
+			var relay_joining := arg.begins_with("--relay=join:")
+			var room := arg.substr(("--relay=host:" if not relay_joining else "--relay=join:").length())
+			var relay_url := "ws://127.0.0.1:24566"
+			for a2 in args:
+				if a2.begins_with("--relay-url="):
+					relay_url = a2.substr("--relay-url=".length())
+			game_mode = GameMode.HOST if not relay_joining else GameMode.CLIENT
+			if relay_joining:
+				NetworkManager.relay_join(relay_url, room)
+			else:
+				NetworkManager.relay_create(relay_url, room)
+			_enter_battle()
 			if want_auto:
 				_spawn_autopilot()
 			return
@@ -125,10 +145,14 @@ func quit_game() -> void:
 
 
 func _enter_battle() -> void:
+	if _entering_battle:
+		return  # 防抖：菜单快速连点/CLI 重复进入
+	_entering_battle = true
 	get_tree().change_scene_to_file("res://scenes/battle.tscn")
 	await get_tree().process_frame
 	await get_tree().process_frame
 	_setup_battle()
+	_entering_battle = false
 
 
 # ═══════════════ 战斗场景接线 ═══════════════
@@ -148,6 +172,10 @@ func _setup_battle() -> void:
 	turn_manager = TurnManager.new()
 	turn_manager.name = "TurnManager"
 	scene.add_child(turn_manager)
+
+	# 场景退出（回菜单/换场景）时复位生命周期并断开 autoload 上的闭包连接，
+	# 否则残留连接会在下一局打到已释放对象（P0-1 修复）
+	board.tree_exited.connect(_on_battle_scene_exited)
 
 	board.setup(turn_manager)
 
@@ -190,15 +218,16 @@ func _setup_battle() -> void:
 			NetworkManager.send_check(GameLogic.state_fingerprint(turn_manager.battle_state))
 	)
 
-	# ── 远端指令 → TurnManager（同一条校验链） ──
-	NetworkManager.action_received.connect(func(action: Dictionary):
+	# ── 远端指令 → TurnManager（同一条校验链；具名 Callable，场景退出可断开） ──
+	_on_net_action_fn = func(action: Dictionary):
 		_applying_remote = true
 		turn_manager.submit_action(action)
 		_applying_remote = false
-	)
+	NetworkManager.action_received.connect(_on_net_action_fn)
 
 	# ── 收到开局包（房主本地触发 / 客机网络触发，路径一致） ──
-	NetworkManager.game_start_received.connect(_on_net_game_start)
+	_on_net_start_fn = _on_net_game_start
+	NetworkManager.game_start_received.connect(_on_net_start_fn)
 
 	turn_manager.game_over.connect(func(winner: int):
 		print("[GameManager] Game Over! Winner: Player %d" % (winner + 1))
@@ -206,8 +235,8 @@ func _setup_battle() -> void:
 
 	_battle_ready = true
 
-	# ── 启动对局 ──
-	if game_mode == GameMode.LOCAL or not NetworkManager.is_network_game:
+	# ── 启动对局 ──（中继房主在对手入房前保持等待，绝不能误开本地局）
+	if game_mode == GameMode.LOCAL:
 		var deck := _load_deck("res://data/decks/player_default.json")
 		if deck.is_empty():
 			return
@@ -221,20 +250,43 @@ func _setup_battle() -> void:
 
 
 func _on_net_game_start(payload: Dictionary) -> void:
+	if turn_manager == null or not _battle_ready:
+		return
 	var p1_deck: Array[String] = []
-	p1_deck.assign(payload["p1_deck"])
+	p1_deck.assign(payload.get("p1_deck", []))
 	var p2_deck: Array[String] = []
-	p2_deck.assign(payload["p2_deck"])
-	turn_manager.start_game(p1_deck, p2_deck, payload["p1_starter"], payload["p2_starter"])
+	p2_deck.assign(payload.get("p2_deck", []))
+	turn_manager.start_game(p1_deck, p2_deck,
+		str(payload.get("p1_starter", "")), str(payload.get("p2_starter", "")))
 	print("[GameManager] Network game started (local player = P%d)" % (NetworkManager.local_player_idx + 1))
 
 
-## 本端输入统一入口：网络模式下只允许轮到自己时操作
+## 战斗场景退出：复位生命周期，断开挂在常驻 autoload 上的闭包（防打向已释放对象）
+func _on_battle_scene_exited() -> void:
+	_battle_ready = false
+	_applying_remote = false
+	turn_manager = null
+	if _on_net_action_fn != null and NetworkManager.action_received.is_connected(_on_net_action_fn):
+		NetworkManager.action_received.disconnect(_on_net_action_fn)
+	if _on_net_start_fn != null and NetworkManager.game_start_received.is_connected(_on_net_start_fn):
+		NetworkManager.game_start_received.disconnect(_on_net_start_fn)
+	_on_net_action_fn = Callable()
+	_on_net_start_fn = Callable()
+
+
+## 本端输入统一入口：对局无效/结束/非本方回合时拒绝本端输入
 func _submit_local(action: Dictionary) -> void:
-	if NetworkManager.is_network_game and turn_manager != null and turn_manager.battle_state != null:
-		if turn_manager.battle_state.active_player_index != NetworkManager.local_player_idx:
-			print("[GameManager] 等待对手行动…")
-			return
+	if turn_manager == null or turn_manager.battle_state == null:
+		return
+	var st := turn_manager.battle_state
+	if NetworkManager.opponent_left:
+		print("[GameManager] 对手已离开，本局无效")
+		return
+	if st.winner != -1:
+		return  # 对局已结束
+	if NetworkManager.is_network_game and st.active_player_index != NetworkManager.local_player_idx:
+		print("[GameManager] 等待对手行动…")
+		return
 	turn_manager.submit_action(action)
 
 

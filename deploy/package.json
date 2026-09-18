@@ -9,6 +9,6 @@
     "start": "node relay-server.js"
   },
   "dependencies": {
-    "ws": "^8.17.0"
+    "ws": "^8.21.3"
   }
 }

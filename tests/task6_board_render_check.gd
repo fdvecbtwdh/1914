@@ -64,7 +64,6 @@ func _test_slots_created(board: Node) -> void:
 	print("[slots created]")
 	var slots = get_tree().get_nodes_in_group("board_slot")
 	_check(slots.size() == 25, "25 board_slot nodes in group, got %d" % slots.size())
-	_check(board.max_rows == 5, "max_rows defaults to 5")
 
 
 func _test_no_test_card_at_edge(board: Node) -> void:
