@@ -194,7 +194,8 @@ func _on_peer_disconnected(_id: int) -> void:
 	if mode != Mode.IDLE:
 		opponent_disconnected.emit()
 		_emit_status("对手已离开")
-		reset()
+		# 注意：此处不立即 reset/close —— Android 上对局中断开时立刻销毁
+		# ENet peer 会触发渲染线程段错误；保持连接对象，由回菜单/退出时统一 reset
 
 
 func _on_connected_to_server() -> void:

@@ -75,24 +75,26 @@ func _process(_delta: float) -> void:
 	if tm == null or tm.battle_state == null:
 		return
 	var now := Time.get_ticks_msec()
+	var st := tm.battle_state
 
-	# 停滞看门狗
-	if now - _last_progress_ms > 30000:
-		printerr("[AUTO] STALL: queue_left=%d turn=%d phase=%s active=%d" % [
-			_queue.size(), tm.battle_state.turn, tm.battle_state.phase, tm.battle_state.active_player_index])
+	# 停滞看门狗：只在轮到自己行动时计时（等对手操作不限时，支持真人节奏）
+	if now - _last_progress_ms > 90000 and st.active_player_index == NetworkManager.local_player_idx:
+		printerr("[AUTO] STALL: queue_left=%d turn=%d phase=%s active=%d local=%d q0phase=%s" % [
+			_queue.size(), st.turn, st.phase, st.active_player_index,
+			NetworkManager.local_player_idx, (_queue[0]["phase"] if not _queue.is_empty() else "<empty>")])
 		get_tree().quit(98)
 		return
 
-	var st := tm.battle_state
 	if st.winner != -1:
 		printerr("[AUTO] unexpected winner during script (turn %d)" % st.turn)
 		get_tree().quit(96)
 		return
 
-	# 轮到自己且阶段匹配队头 → 出手
+	# 轮到对手期间不断刷新计时（真人节奏不限时）；只有轮到自己却 90 秒无进展才算停滞
 	if _queue.is_empty():
 		return
 	if st.active_player_index != NetworkManager.local_player_idx:
+		_last_progress_ms = now
 		return
 	if st.phase != _queue[0]["phase"]:
 		return
@@ -108,8 +110,8 @@ func _process(_delta: float) -> void:
 
 func _finish() -> void:
 	_finished = true
-	# 等最后的指纹核对在两端跑完
-	_do_after(3.0 if NetworkManager.local_player_idx == 0 else 2.0, func():
+	# 等最后的指纹核对在两端跑完（host 打完队列后多等一会，给真人/慢端留窗口）
+	_do_after(20.0 if NetworkManager.local_player_idx == 0 else 2.0, func():
 		var st: BattleState = get_node("/root/GameManager").turn_manager.battle_state
 		print("[AUTO] PASS — local=P%d end turn=%d phase=%s fp=%s (%.1fs)" % [
 			NetworkManager.local_player_idx + 1, st.turn, st.phase,
