@@ -75,8 +75,8 @@ func _run_all() -> void:
 	# 3. 敌方单位雾中被格子级雾覆盖（z 序）：敌方单位卡存在但被 fog 层遮住
 	_place_unit(st, 1, 3, 3)
 	tm.state_changed.emit(st)
-	_check(board._unit_displays.has(Vector2i(3, 3)), "enemy display node exists")
-	var enemy_disp: Control = board._unit_displays[Vector2i(3, 3)]
+	_check(board._unit_displays.has(Vector3i(3, 3, 0)), "enemy display node exists")
+	var enemy_disp: Control = board._unit_displays[Vector3i(3, 3, 0)]
 	_check(fog_layer.z_index > 0 and enemy_disp.z_index == 0, "enemy card drawn below fog layer")
 
 	# 4. 占领度标签：文本与颜色

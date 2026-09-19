@@ -19,7 +19,8 @@ static func make_snapshot(state: BattleState) -> Dictionary:
 			if u == null:
 				continue
 			units.append({"r": r, "c": c, "id": u.card_id, "o": u.owner_index,
-				"a": u.attack, "d": u.defense, "md": u.max_defense})
+				"a": u.attack, "d": u.defense, "md": u.max_defense,
+				"air": u.is_air, "pt": u.patrolling})
 	var players: Array = []
 	for p in state.players:
 		players.append({
@@ -73,7 +74,9 @@ static func snapshot_to_state(snap: Dictionary) -> BattleState:
 		unit.attack = int(u.get("a", 0))
 		unit.defense = int(u.get("d", 0))
 		unit.max_defense = int(u.get("md", unit.defense))
-		st.board.set_unit(int(u.get("r", 0)), int(u.get("c", 0)), unit)
+		unit.patrolling = bool(u.get("pt", false))
+		var layer := "air" if bool(u.get("air", false)) else "ground"
+		st.board.set_unit(int(u.get("r", 0)), int(u.get("c", 0)), unit, layer)
 	return st
 
 
@@ -123,6 +126,19 @@ static func describe_action(a: Dictionary, before: Dictionary = {}) -> String:
 			return "补给：修复相邻友方 %d 点" % int(a.get("amount", 0))
 		"rear_repair":
 			return "后方修复 (%d, %d)" % [int(a.get("row", 0)), int(a.get("col", 0))]
+		"air_combat":
+			return "空战爆发（第 %d 阵线）" % int(a.get("row", 0))
+		"air_strike":
+			var af: Array = a.get("from", [0, 0])
+			var at: Array = a.get("to", [0, 0])
+			var label := "%s (%d, %d) 空战攻击 (%d, %d)，造成 %d 伤害" % [a.get("attacker", "单位"), af[0], af[1], at[0], at[1], int(a.get("damage", 0))]
+			if bool(a.get("no_counter", false)):
+				label += "（免反击）"
+			return label
+		"air_combat_blocked":
+			return "空战未取胜，攻击被拦截作废"
+		"build_fort":
+			return "修筑工事于 (%d, %d)，防御 %d" % [int(a.get("to", [0, 0])[0]), int(a.get("to", [0, 0])[1]), int(a.get("defense", 0))]
 		"end_turn":
 			return "结束回合"
 		"skip_phase":

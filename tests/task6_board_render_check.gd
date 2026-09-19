@@ -102,11 +102,11 @@ func _test_render_positions_and_keys(board: Node, _card_data: Resource) -> void:
 	_place_unit(st, 1, 4, 4)
 	board._on_state_changed(st)
 	_check(board._unit_displays.size() == 2, "rendered 2 units, got %d" % board._unit_displays.size())
-	var d00: CardDisplay = board._unit_displays.get(Vector2i(0, 0))
-	var d44: CardDisplay = board._unit_displays.get(Vector2i(4, 4))
-	_check(d00 != null and d44 != null, "keys are Vector2i (0,0) and (4,4)")
+	var d00: CardDisplay = board._unit_displays.get(Vector3i(0, 0, 0))
+	var d44: CardDisplay = board._unit_displays.get(Vector3i(4, 4, 0))
+	_check(d00 != null and d44 != null, "keys are Vector3i (0,0,0) and (4,4,0) [ground layer]")
 	_check(d00 is CardDisplay and d44 is CardDisplay, "both displays are CardDisplay")
-	_check(board._unit_displays.has(Vector2i(0, 1)) == false, "no display key at empty cell (0,1)")
+	_check(board._unit_displays.has(Vector3i(0, 1, 0)) == false, "no display key at empty cell (0,1)")
 	# 期望位置用棋盘自身的网格偏移计算（响应式布局下偏移随视口变化，无头模式视口为 0）
 	var expected_44: Vector2 = board._grid_offset + Vector2(4 * board.SLOT_SPACING.x, 4 * board.SLOT_SPACING.y)
 	_check(d44.position == expected_44, "unit at (4,4) aligned to grid (%s == %s)" % [d44.position, expected_44])
@@ -135,7 +135,7 @@ func _test_re_render_clears_old(board: Node, _card_data: Resource) -> void:
 	var st1 := BattleState.new()
 	_place_unit(st1, 0, 0, 0)
 	board._on_state_changed(st1)
-	var old: CardDisplay = board._unit_displays.get(Vector2i(0, 0))
+	var old: CardDisplay = board._unit_displays.get(Vector3i(0, 0, 0))
 	_check(old != null, "first render places unit at (0,0)")
 
 	var st2 := BattleState.new()
@@ -143,8 +143,8 @@ func _test_re_render_clears_old(board: Node, _card_data: Resource) -> void:
 	board._on_state_changed(st2)
 	_check(old.is_queued_for_deletion(), "old display queued for deletion after re-render")
 	_check(board._unit_displays.size() == 1, "_unit_displays has exactly 1 entry after re-render, got %d" % board._unit_displays.size())
-	_check(board._unit_displays.has(Vector2i(0, 0)) == false, "old cell key (0,0) removed")
-	_check(board._unit_displays.has(Vector2i(2, 2)), "new cell key (2,2) present")
+	_check(board._unit_displays.has(Vector3i(0, 0, 0)) == false, "old cell key (0,0) removed")
+	_check(board._unit_displays.has(Vector3i(2, 2, 0)), "new cell key (2,2) present")
 
 
 func _test_null_state_clears(board: Node, _card_data: Resource) -> void:

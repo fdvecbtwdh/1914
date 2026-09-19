@@ -132,9 +132,9 @@ func _test_state_changed_renders() -> void:
 	_check(hand._hand_buttons.size() == 1, "1 hand button, got %d" % hand._hand_buttons.size())
 	_check(_count_title_labels(hand) == 2, "2 section title labels, got %d" % _count_title_labels(hand))
 	var pbtn: Button = hand._purchase_buttons.get("infantry_01")
-	_check(pbtn != null and pbtn.text == "[1] 步兵 (G:30)", "purchase button text '%s'" % (pbtn.text if pbtn else ""))
+	_check(pbtn != null and pbtn.text.begins_with("[1][铜] 步兵"), "purchase button shows rarity tag (got '%s')" % (pbtn.text if pbtn else ""))
 	var hbtn: Button = hand._hand_buttons.get("artillery_01")
-	_check(hbtn != null and hbtn.text == "[1] 火炮 (Z:1) 5/2", "hand button text '%s'" % (hbtn.text if hbtn else ""))
+	_check(hbtn != null and (hbtn.text.begins_with("✓ [1] 火炮") or hbtn.text.begins_with("✗ [1] 火炮")), "hand button shows deploy-ready mark (got '%s')" % (hbtn.text if hbtn else ""))
 	hand.queue_free()
 	tm.queue_free()
 

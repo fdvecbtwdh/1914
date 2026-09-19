@@ -225,14 +225,34 @@ func _render_purchase_zone(state: BattleState) -> void:
 			continue
 		idx += 1
 		var btn := Button.new()
-		btn.text = "[%d] %s (G:%d)" % [idx, card_data.card_name, card_data.cost_g]
+		# 6.2 稀有度标识 + 每回合购买上限（银3/金2）达到时置灰
+		var rarity_tag := _rarity_tag(str(card_data.rarity))
+		btn.text = "[%d]%s %s (G:%d)" % [idx, rarity_tag, card_data.card_name, card_data.cost_g]
+		var rarity := str(card_data.rarity)
+		var bought: int = int(player.purchases_this_turn.get(rarity, 0))
+		var limit: int = GameLogic.PURCHASE_LIMITS.get(rarity, 99)
+		if bought >= limit:
+			btn.disabled = true
+			btn.text += " 已达上限"
+		var card_cost: int = card_data.cost_g
+		if player.resources["G"] < card_cost:
+			btn.disabled = true  # G 不足也置灰（原逻辑为静默点击无效）
 		btn.position = Vector2(px, py)
-		btn.size.x = 160.0
+		btn.size.x = 190.0
 		btn.pressed.connect(_make_purchase_handler(card_id))
 		add_child(btn)
 		_purchase_buttons[card_id] = btn
 		_purchase_order.append(card_id)
 		py += CARD_BTN_HEIGHT + 4.0
+
+
+func _rarity_tag(rarity: String) -> String:
+	match rarity:
+		"silver":
+			return "[银]"
+		"gold":
+			return "[金]"
+	return "[铜]"
 
 
 func _render_hand(state: BattleState) -> void:
@@ -252,6 +272,7 @@ func _render_hand(state: BattleState) -> void:
 	add_child(title)
 	py += 22.0
 	var idx := 0
+	var in_deploy_phase := state.phase == "deploy"
 	for card_id in player.hand:
 		var card_data: Resource = CardDataLoader.cards.get(card_id)
 		if card_data == null:
@@ -260,7 +281,17 @@ func _render_hand(state: BattleState) -> void:
 		var btn := Button.new()
 		btn.text = "[%d] %s (Z:%d) %d/%d" % [idx, card_data.card_name, card_data.cost_z, card_data.attack, card_data.defense]
 		btn.position = Vector2(px, py)
-		btn.size.x = 170.0
+		btn.size.x = 190.0
+		# 4.3 部署就绪标识：部署阶段基于引擎判定显示可/不可部署及原因
+		if in_deploy_phase:
+			var verdict: Dictionary = GameLogic.can_deploy(state, state.active_player_index, card_id)
+			if bool(verdict.get("ok", false)):
+				btn.text = "✓ " + btn.text
+				btn.tooltip_text = "本回合可以部署"
+			else:
+				btn.text = "✗ " + btn.text
+				btn.disabled = true
+				btn.tooltip_text = str(verdict.get("reason", "本回合不能部署"))
 		btn.pressed.connect(_make_deploy_handler(card_id))
 		add_child(btn)
 		_hand_buttons[card_id] = btn

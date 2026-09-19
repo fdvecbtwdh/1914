@@ -1,0 +1,17 @@
+{
+  "id": "fort_01",
+  "name": "工事",
+  "nation": "neutral",
+  "type": "unit",
+  "unit_class": "fort",
+  "cost_g": 0,
+  "cost_z": 0,
+  "attack": 0,
+  "defense": 2,
+  "vision_range": "frontline_only",
+  "attack_range": "none",
+  "abilities": [],
+  "rarity": "common",
+  "art": "",
+  "flavor_text": "堑壕与铁丝网，把战线钉死在泥泞里。"
+}

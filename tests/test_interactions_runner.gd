@@ -95,9 +95,15 @@ func _test_move_rules() -> void:
 	_place(st, 0, 1, 1, "infantry_01")
 	var st2 := GameLogic.move_unit(st, 0, 1, 1, 2, 2)
 	_check(_alive(st2, 2, 2), "A1 infantry diagonal forward move ok")
-	# A2 后退禁止
+	# A2 后退（1.3）：直退一格合法，消耗全部行动
 	st2 = GameLogic.move_unit(st, 0, 1, 1, 0, 1)
-	_check(st2 == null, "A2 backward move blocked (null)")
+	_check(st2 != null and _alive(st2, 0, 1), "A2 straight backward = legal retreat")
+	if st2 != null:
+		var ret: BattleState.UnitData = st2.board.get_unit(0, 1)
+		_check(ret != null and ret.retreated and ret.has_acted, "A2b retreat marks retreated + has_acted")
+	# A2c 斜向后仍禁止
+	var st2c := GameLogic.move_unit(st, 0, 1, 1, 0, 0)
+	_check(st2c == null, "A2c diagonal backward blocked (null)")
 	# A3 横向移动
 	st2 = GameLogic.move_unit(st, 0, 1, 1, 1, 2)
 	_check(_alive(st2, 1, 2), "A3 lateral move ok")
@@ -180,12 +186,17 @@ func _test_move_rules() -> void:
 	st.players[0].resources["Z"] = 0
 	st2 = GameLogic.move_unit(st, 0, 0, 0, 1, 0)
 	_check(st2 == null and _alive(st, 0, 0), "A15 move with no Z blocked (null)")
-	# A16 P2 后退同样禁止
+	# A16 P2 后退（1.3）：直退合法（消耗全部行动）；已在自己后排行(4)时不能再退
 	st = _fresh_state()
 	st.active_player_index = 1
 	_place(st, 1, 3, 0, "infantry_01")
 	st2 = GameLogic.move_unit(st, 1, 3, 0, 4, 0)
-	_check(st2 == null and _alive(st, 3, 0), "A16 P2 backward move blocked (null)")
+	_check(st2 != null and _alive(st2, 4, 0), "A16 P2 straight retreat legal")
+	st = _fresh_state()
+	st.active_player_index = 1
+	_place(st, 1, 4, 0, "infantry_01")
+	st2 = GameLogic.move_unit(st, 1, 4, 0, 5, 0)
+	_check(st2 == null, "A16b P2 retreat off-board (behind own rear row) blocked")
 
 
 # ═══ B. 攻击基础 ═══

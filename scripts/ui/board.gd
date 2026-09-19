@@ -156,25 +156,81 @@ func _clear_unit_displays() -> void:
 
 
 func _render_units(state: BattleState) -> void:
-	for row in range(state.board.rows):
-		for col in range(state.board.cols):
-			var unit: BattleState.UnitData = state.board.get_unit(row, col)
-			if unit == null:
-				continue
-			var card_data: Resource = CardDataLoader.cards.get(unit.card_id)
-			if card_data == null:
-				continue
-			var display := spawn_card(card_data)
-			display.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 棋盘单位不可拖拽（状态驱动渲染）
-			display.position = _grid_offset + Vector2(col * SLOT_SPACING.x, row * SLOT_SPACING.y)
-			# 己方原色，敌方微偏红（联网按本地玩家视角）
-			if unit.owner_index == _viewer_idx(state):
-				_set_card_bg(display, Color(0.3, 0.4, 0.5, 1.0))
-			else:
-				_set_card_bg(display, Color(0.48, 0.3, 0.32, 1.0))
-			_update_unit_stats(display, unit.attack, unit.defense)
-			add_child(display)
-			_unit_displays[Vector2i(row, col)] = display
+	# 1.2 陆空双层渲染：地面层原位，空域层右上偏移并加 ✈ 标识
+	for layer in ["ground", "air"]:
+		for row in range(state.board.rows):
+			for col in range(state.board.cols):
+				var unit: BattleState.UnitData = state.board.get_unit(row, col, layer)
+				if unit == null:
+					continue
+				var card_data: Resource = CardDataLoader.cards.get(unit.card_id)
+				if card_data == null:
+					continue
+				var display := spawn_card(card_data)
+				display.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 棋盘单位不可拖拽（状态驱动渲染）
+				var pos := _grid_offset + Vector2(col * SLOT_SPACING.x, row * SLOT_SPACING.y)
+				var is_air: bool = layer == "air"
+				if is_air:
+					pos += Vector2(26, -18)  # 空军叠在陆军格上方，错位显示
+				display.position = pos
+				# 己方原色，敌方微偏红（联网按本地玩家视角）；空军加浅蓝调
+				var viewer := _viewer_idx(state)
+				var base := Color(0.3, 0.4, 0.5, 1.0) if unit.owner_index == viewer else Color(0.48, 0.3, 0.32, 1.0)
+				if is_air:
+					base = Color(0.3, 0.45, 0.62, 1.0) if unit.owner_index == viewer else Color(0.42, 0.34, 0.5, 1.0)
+				_set_card_bg(display, base)
+				_update_unit_stats(display, unit.attack, unit.defense)
+				if is_air:
+					_add_air_marker(display)
+				_update_unit_tags(display, unit)
+				add_child(display)
+				_unit_displays[Vector3i(row, col, 1 if is_air else 0)] = display
+
+
+## 4.3 单位状态标签：从单位状态数据读取（坚守/巡逻/守护/防空/补给/潜行/突击/冲锋/收缴/已行动）
+func _update_unit_tags(display: Control, unit: BattleState.UnitData) -> void:
+	var tags: Array[String] = []
+	if unit.firm_level > 0:
+		tags.append("坚%d" % unit.firm_level)
+	if unit.patrolling:
+		tags.append("巡")
+	if unit.is_guarded:
+		tags.append("护")
+	if unit.abilities.has("防空"):
+		tags.append("空")
+	if unit.supply_level > 0:
+		tags.append("补")
+	if unit.abilities.has("突击"):
+		tags.append("突")
+	if unit.abilities.has("冲锋"):
+		tags.append("锋")
+	if unit.abilities.has("收缴"):
+		tags.append("缴")
+	if unit.stealthed and unit.revealed:
+		tags.append("潜")
+	if unit.has_acted:
+		tags.append("已动")
+	if tags.is_empty():
+		return
+	var tag_label := Label.new()
+	tag_label.name = "_state_tags"
+	tag_label.text = " ".join(tags)
+	tag_label.add_theme_font_size_override("font_size", 10)
+	tag_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.6))
+	tag_label.position = Vector2(4, 62)
+	tag_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	display.add_child(tag_label)
+
+
+func _add_air_marker(display: Control) -> void:
+	var marker := Label.new()
+	marker.name = "_air_marker"
+	marker.text = "✈"
+	marker.add_theme_font_size_override("font_size", 12)
+	marker.add_theme_color_override("font_color", Color(0.75, 0.9, 1.0))
+	marker.position = Vector2(64.0, 2.0)
+	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	display.add_child(marker)
 
 
 ## 复盘入口：以无迷雾模式渲染任意快照局面（不接 TurnManager 也可用）
@@ -200,17 +256,17 @@ func _update_visibility(state: BattleState) -> void:
 				disp.set_visible_to_enemy(true, false, false)
 		return
 	var visible_cells := GameLogic.compute_visible_cells(state, viewer_idx)
-	# 1. 更新每个敌方单位的显示（潜行规则不变）
-	for r in range(state.board.rows):
-		for c in range(state.board.cols):
-			var unit := state.board.get_unit(r, c)
-			if unit == null or unit.owner_index == viewer_idx:
-				continue  # 跳过己方单位（始终可见）
-			var key := Vector2i(r, c)
-			var display: CardDisplay = _unit_displays.get(key)
-			if display == null or not is_instance_valid(display):
-				continue
-			display.set_visible_to_enemy(visible_cells.has(key), unit.stealthed, unit.revealed)
+	# 1. 更新每个敌方单位（两层）的显示（潜行规则不变）
+	for key in _unit_displays:
+		var k3: Vector3i = key
+		var display: CardDisplay = _unit_displays[key]
+		if not is_instance_valid(display):
+			continue
+		var layer := "air" if k3.z == 1 else "ground"
+		var unit := state.board.get_unit(k3.x, k3.y, layer)
+		if unit == null or unit.owner_index == viewer_idx:
+			continue  # 跳过己方单位（始终可见）
+		display.set_visible_to_enemy(visible_cells.has(Vector2i(k3.x, k3.y)), unit.stealthed, unit.revealed)
 	# 2. 格子级迷雾：所有不可见格子一律覆盖
 	_apply_fog_layer(state, visible_cells)
 
@@ -377,8 +433,9 @@ func _select_unit(row: int, col: int) -> void:
 			slot.show_highlight(HIGHLIGHT_MOVE)
 	# 橙色高亮可攻击目标 — 直接改敌方 CardDisplay 颜色
 	_apply_attack_highlights(state, row, col)
-	# 添加选中指示器到己方单位
-	var key := Vector2i(row, col)
+	# 添加选中指示器到己方单位（所在层）
+	var sel_layer := 1 if state.board.get_unit(row, col, "air") == unit else 0
+	var key := Vector3i(row, col, sel_layer)
 	if _unit_displays.has(key):
 		var sel_overlay := ColorRect.new()
 		sel_overlay.name = "_select_overlay"
@@ -391,13 +448,16 @@ func _select_unit(row: int, col: int) -> void:
 func _apply_attack_highlights(state: BattleState, from_row: int, from_col: int) -> void:
 	var attack_targets := _get_valid_attack_targets(from_row, from_col, state)
 	for pos in attack_targets:
-		if _unit_displays.has(pos):
-			var overlay := ColorRect.new()
-			overlay.name = "_atk_overlay"
-			overlay.size = SLOT_SIZE
-			overlay.color = HIGHLIGHT_ATTACK
-			overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			_unit_displays[pos].add_child(overlay)
+		# 同格两层单位都可能是目标：全部加橙色高亮
+		for layer in [0, 1]:
+			var key := Vector3i(pos.x, pos.y, layer)
+			if _unit_displays.has(key):
+				var overlay := ColorRect.new()
+				overlay.name = "_atk_overlay"
+				overlay.size = SLOT_SIZE
+				overlay.color = HIGHLIGHT_ATTACK
+				overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				_unit_displays[key].add_child(overlay)
 
 
 func _deselect_unit() -> void:
@@ -408,8 +468,14 @@ func _deselect_unit() -> void:
 
 func _get_valid_move_targets(from_row: int, from_col: int, state: BattleState) -> Array[Vector2i]:
 	var targets: Array[Vector2i] = []
-	var unit := state.board.get_unit(from_row, from_col)
+	# 1.2 图层：单位在自身图层内移动（含 1.3 后退：直退一格，消耗全部行动）
+	var layer := "air" if state.board.get_unit(from_row, from_col, "air") != null else "ground"
+	var unit := state.board.get_unit(from_row, from_col, layer)
 	if unit == null:
+		return targets
+	if unit.deployed_this_turn and not unit.abilities.has("突击"):
+		return targets  # 部署回合不能移动（突击例外）
+	if unit.retreated:
 		return targets
 	var player_idx := unit.owner_index
 	var directions: Array[int] = [-1, 0, 1]
@@ -421,11 +487,14 @@ func _get_valid_move_targets(from_row: int, from_col: int, state: BattleState) -
 			var tc: int = from_col + dc
 			if tr < 0 or tr >= state.board.rows or tc < 0 or tc >= state.board.cols:
 				continue
-			if player_idx == 0 and tr < from_row:
-				continue
-			if player_idx == 1 and tr > from_row:
-				continue
-			if state.board.get_unit(tr, tc) != null:
+			var is_retreat := (player_idx == 0 and tr < from_row) or (player_idx == 1 and tr > from_row)
+			if is_retreat:
+				# 后退：只能直退（不斜退）；己方后排行不能再退
+				if dc != 0:
+					continue
+				if (player_idx == 0 and from_row == 0) or (player_idx == 1 and from_row == state.board.rows - 1):
+					continue
+			if state.board.get_unit(tr, tc, layer) != null:
 				continue
 			targets.append(Vector2i(tr, tc))
 	return targets
@@ -433,11 +502,19 @@ func _get_valid_move_targets(from_row: int, from_col: int, state: BattleState) -
 
 func _get_valid_attack_targets(from_row: int, from_col: int, state: BattleState) -> Array[Vector2i]:
 	var targets: Array[Vector2i] = []
-	var unit := state.board.get_unit(from_row, from_col)
+	var attacker_is_air := false
+	var unit := state.board.get_unit(from_row, from_col, "air")
+	if unit != null:
+		attacker_is_air = true
+	else:
+		unit = state.board.get_unit(from_row, from_col)
 	if unit == null:
 		return targets
 	# 已攻击的单位本回合不能再攻击
 	if unit.has_attacked:
+		return targets
+	# 后退消耗全部行动
+	if unit.retreated:
 		return targets
 	# Z 不足时任何攻击都无效
 	var player = state.players[unit.owner_index]
@@ -445,7 +522,10 @@ func _get_valid_attack_targets(from_row: int, from_col: int, state: BattleState)
 		return targets
 	for row in range(state.board.rows):
 		for col in range(state.board.cols):
+			# 1.2 目标定层：地面攻击者只能打地面层；空军攻击者优先空域层，其次地面层
 			var target := state.board.get_unit(row, col)
+			if target == null and attacker_is_air:
+				target = state.board.get_unit(row, col, "air")
 			if target == null:
 				continue
 			if target.owner_index == unit.owner_index:

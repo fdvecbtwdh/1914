@@ -275,6 +275,9 @@ func _test_action_metadata() -> void:
 		_check(last.get("turn", -1) == st2.turn and last.get("phase", "") == "deploy", "entry has turn/phase metadata")
 		_check(last.get("player", -1) == 0, "entry has player")
 	st2.phase = "action"
+	# 1.3 部署回合不能移动：清除部署标记模拟次回合
+	var moved_unit: BattleState.UnitData = st2.board.get_unit(0, 0)
+	moved_unit.deployed_this_turn = false
 	var st3 := GameLogic.move_unit(st2, 0, 0, 0, 1, 0)
 	_check(st3 != null, "move ok")
 	if st3 != null:
