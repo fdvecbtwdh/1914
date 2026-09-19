@@ -169,6 +169,8 @@ func _setup_battle() -> void:
 		printerr("[GameManager] Scene root is not a Board!")
 		return
 
+	BetaBanner.attach(scene)  # 顶部测试版本提示（全场景公共 UI）
+
 	turn_manager = TurnManager.new()
 	turn_manager.name = "TurnManager"
 	scene.add_child(turn_manager)

@@ -25,6 +25,8 @@ func _ready() -> void:
 
 
 func _build_ui() -> void:
+	BetaBanner.attach(self)  # 顶部测试版本提示（全场景公共 UI）
+
 	_title = Label.new()
 	_title.text = "1914"
 	_title.add_theme_font_size_override("font_size", 48)
