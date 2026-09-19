@@ -56,6 +56,7 @@ jobs:
     name: Windows Build
     runs-on: ubuntu-latest
     needs: test
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -106,6 +107,7 @@ jobs:
     name: Android Build
     runs-on: ubuntu-latest
     needs: test
+    timeout-minutes: 45
     env:
       KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
       KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -174,9 +176,8 @@ jobs:
           export/android/debug_keystore_pass="android"
           EOF
 
-      - name: Install Android gradle build template
-        run: ./godot-editor --headless --path . --install-android-build-template
-
+      # 注意：本项目 Android preset 用预编译 APK 模板（use_gradle_build=false），
+      # 不需要 --install-android-build-template（实测该命令 headless 下会挂死，本地+CI 均复现）。
       - name: Inject release keystore into export presets
         run: |
           KS=/tmp/ks/release.keystore
