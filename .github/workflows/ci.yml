@@ -84,6 +84,8 @@ jobs:
 
       - name: Export Windows release
         run: |
+          mkdir -p build
+          ls -la "$TEMPLATES_DIR" | head -4
           ./godot-editor --headless --path . --export-release "Windows" build/1914.exe
           test -f build/1914.exe
           test "$(stat -c%s build/1914.exe)" -gt 10000000
@@ -193,6 +195,7 @@ jobs:
 
       - name: Export Android release APK
         run: |
+          mkdir -p build
           ./godot-editor --headless --path . --export-release "Android" build/1914.apk
           test -f build/1914.apk
           test "$(stat -c%s build/1914.apk)" -gt 10000000
