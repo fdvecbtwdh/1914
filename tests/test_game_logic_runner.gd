@@ -31,6 +31,7 @@ func _run_all() -> void:
 	_test_counter_attack()
 	_test_artillery_no_counter()
 	_test_end_turn()
+	_test_action_metadata()
 	_test_front_control()
 	_test_front_victory()
 	_test_visible_cells()
@@ -258,6 +259,27 @@ func _test_end_turn() -> void:
 	# 一轮完整结束：P2 end → turn 2, P1 再动
 	var st3 := GameLogic.end_turn(st2)
 	_check(st3.active_player_index == 0 and st3.turn == 2, "turn 2 starts after both players act")
+
+
+func _test_action_metadata() -> void:
+	print("[action_metadata]")
+	var st := _make_init_state()
+	st.players[0].hand.assign(["test_infantry_01"])
+	st.players[0].resources["Z"] = 5
+	st.phase = "deploy"
+	var st2 := GameLogic.deploy_unit(st, 0, "test_infantry_01", 0, 0)
+	_check(st2 != null, "deploy ok")
+	if st2 != null:
+		var last: Dictionary = st2.action_log[-1]
+		_check(last.get("type", "") == "deploy", "log entry is deploy")
+		_check(last.get("turn", -1) == st2.turn and last.get("phase", "") == "deploy", "entry has turn/phase metadata")
+		_check(last.get("player", -1) == 0, "entry has player")
+	st2.phase = "action"
+	var st3 := GameLogic.move_unit(st2, 0, 0, 0, 1, 0)
+	_check(st3 != null, "move ok")
+	if st3 != null:
+		var last2: Dictionary = st3.action_log[-1]
+		_check(last2.get("phase", "") == "action" and last2.get("player", -1) == 0, "move entry metadata")
 
 
 func _test_front_control() -> void:

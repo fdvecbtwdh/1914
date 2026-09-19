@@ -34,6 +34,9 @@ var _fog_rects: Dictionary = {}   # {Vector2i: ColorRect}
 ## 战线占领度行标签（docs/game-mechanics.md 第 5 节）
 var _front_labels: Array[Label] = []
 
+## 复盘模式：无迷雾，全图局面公开显示（结算后复盘界面用）
+var review_mode := false
+
 
 func _ready() -> void:
 	print("[Board] Ready — waiting for TurnManager")
@@ -174,11 +177,28 @@ func _render_units(state: BattleState) -> void:
 			_unit_displays[Vector2i(row, col)] = display
 
 
+## 复盘入口：以无迷雾模式渲染任意快照局面（不接 TurnManager 也可用）
+func render_review_state(state: BattleState) -> void:
+	review_mode = true
+	_on_state_changed(state)
+
+
 ## Phase 3: 迷雾可见性计算（引擎纯函数）+ 格子级迷雾渲染（4.1）
 func _update_visibility(state: BattleState) -> void:
 	if state == null:
 		return
 	var viewer_idx := _viewer_idx(state)
+	if review_mode:
+		# 复盘：无迷雾，一切公开
+		for key in _fog_rects:
+			var frect: ColorRect = _fog_rects[key]
+			if is_instance_valid(frect):
+				frect.visible = false
+		for key2 in _unit_displays:
+			var disp: CardDisplay = _unit_displays[key2]
+			if is_instance_valid(disp):
+				disp.set_visible_to_enemy(true, false, false)
+		return
 	var visible_cells := GameLogic.compute_visible_cells(state, viewer_idx)
 	# 1. 更新每个敌方单位的显示（潜行规则不变）
 	for r in range(state.board.rows):

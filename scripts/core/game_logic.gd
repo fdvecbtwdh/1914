@@ -5,6 +5,16 @@ class_name GameLogic
 ## 每个方法接收 BattleState，深拷贝后修改并返回新 state
 
 
+## 统一 action_log 入口：自动补 turn/phase/player 元数据（复盘录像按回合/阶段分组依赖这些字段）
+## info 中的 "player" 优先（反击击杀 by 守方等场景），否则用 active_player_index
+static func _log_action(state: BattleState, info: Dictionary) -> void:
+	var entry := {"turn": state.turn, "phase": state.phase}
+	entry["player"] = info.get("player", state.active_player_index)
+	for k in info:
+		entry[k] = info[k]
+	state.action_log.append(entry)
+
+
 static func init_game(p1_deck: Array[String], p2_deck: Array[String], p1_starter: String, p2_starter: String) -> BattleState:
 	var state := BattleState.new()
 	state.setup(p1_deck, p2_deck, p1_starter, p2_starter)
@@ -85,7 +95,7 @@ static func deploy_unit(state: BattleState, player_idx: int, card_id: String, ro
 	# Phase 3: 初始化扩展字段
 	_init_unit_from_card(unit, card_data)
 	new_state.board.set_unit(row, col, unit)
-	new_state.action_log.append({"type": "deploy", "player": player_idx, "card_id": card_id, "row": row, "col": col})
+	_log_action(new_state, {"type": "deploy", "player": player_idx, "card_id": card_id, "row": row, "col": col})
 	_refresh_guards(new_state)   # 新单位入场后重算全图守护关系
 	return new_state
 
@@ -137,7 +147,7 @@ static func move_unit(state: BattleState, player_idx: int, from_row: int, from_c
 	new_state.board.set_unit(to_row, to_col, unit)
 	unit.move_count += 1
 	unit.has_acted = true
-	new_state.action_log.append({"type": "move", "player": player_idx, "from": [from_row, from_col], "to": [to_row, to_col]})
+	_log_action(new_state, {"type": "move", "player": player_idx, "from": [from_row, from_col], "to": [to_row, to_col]})
 	_refresh_guards(new_state)   # 位置变化后重算全图守护关系
 	return new_state
 
@@ -201,7 +211,7 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 	defender.defense -= damage
 
 	# 战斗记录
-	new_state.action_log.append({"type": "attack", "player": player_idx, "from": [from_row, from_col], "to": [actual_row, actual_col], "damage": damage})
+	_log_action(new_state, {"type": "attack", "player": player_idx, "from": [from_row, from_col], "to": [actual_row, actual_col], "damage": damage})
 
 	# 是否消灭
 	if defender.defense <= 0:
@@ -214,7 +224,7 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 			reward_g = int(card_data.cost_g * 0.50) if card_data != null else 0
 		player.resources["G"] += reward_g
 		new_state.board.set_unit(actual_row, actual_col, null)
-		new_state.action_log.append({"type": "destroy", "card_id": defender.card_id, "reward_g": reward_g})
+		_log_action(new_state, {"type": "destroy", "player": player_idx, "card_id": defender.card_id, "reward_g": reward_g})
 	else:
 		# 反击（攻击者未被消灭时）
 		_counter_attack(attacker, defender, from_row, from_col, actual_row, actual_col, new_state)
@@ -461,10 +471,10 @@ static func _counter_attack(attacker: BattleState.UnitData, defender: BattleStat
 	if attacker.firm_level > 0:
 		counter_dmg = max(1, counter_dmg - attacker.firm_level)
 	attacker.defense -= counter_dmg
-	state.action_log.append({"type": "counter", "damage": counter_dmg})
+	_log_action(state, {"type": "counter", "player": defender.owner_index, "damage": counter_dmg})
 	if attacker.defense <= 0:
 		state.board.set_unit(atk_row, atk_col, null)
-		state.action_log.append({"type": "destroy", "card_id": attacker.card_id, "reward_g": 0})
+		_log_action(state, {"type": "destroy", "player": defender.owner_index, "card_id": attacker.card_id, "reward_g": 0})
 
 
 ## 从 abilities 数组中解析带等级的词条
@@ -618,7 +628,7 @@ static func _apply_supply(state: BattleState, player_idx: int) -> void:
 					var neighbor: BattleState.UnitData = state.board.get_unit(r + dr, c + dc)
 					if neighbor != null and neighbor.owner_index == player_idx and neighbor.defense < neighbor.max_defense:
 						neighbor.defense = min(neighbor.max_defense, neighbor.defense + unit.supply_level)
-						state.action_log.append({"type": "supply", "from": [r, c], "to": [r + dr, c + dc], "amount": unit.supply_level})
+						_log_action(state, {"type": "supply", "player": player_idx, "from": [r, c], "to": [r + dr, c + dc], "amount": unit.supply_level})
 						healed = true
 						break
 
@@ -630,7 +640,7 @@ static func _apply_rear_repair(state: BattleState, player_idx: int) -> void:
 		var unit: BattleState.UnitData = state.board.get_unit(rear_row, c)
 		if unit != null and unit.owner_index == player_idx and unit.defense < unit.max_defense:
 			unit.defense = min(unit.max_defense, unit.defense + 1)
-			state.action_log.append({"type": "rear_repair", "row": rear_row, "col": c})
+			_log_action(state, {"type": "rear_repair", "player": player_idx, "row": rear_row, "col": c})
 
 #endregion
 

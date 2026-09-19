@@ -43,6 +43,7 @@ var _found_hosts: Array = []                 # [{ip, name}]
 var _relay_ws: WebSocketPeer = null
 var _relay_is_creator := false
 var _relay_room := ""
+var _relay_server_url := ""         # 中继服务器 ws url（录像 HTTP 地址由此推导）
 var _relay_joined := false          # 已收到服务器 joined 应答（可发 ready）
 var _relay_join_sent := false       # 已发送 join 请求
 
@@ -159,6 +160,18 @@ func leave(reason: String = "") -> void:
 	if reason != "":
 		_emit_status(reason)
 	reset()
+
+
+## 当前对局的录像 ID：中继房 = 房间码（双方一致）；直连/本地 = 按时间生成（各自独立上传）
+func replay_game_id() -> String:
+	if _relay_room != "":
+		return _relay_room
+	return "direct-%d" % int(Time.get_unix_time_from_system() * 1000.0)
+
+
+## 当前中继服务器 ws url（未使用中继时为空，录像 HTTP 地址由它推导）
+func relay_url() -> String:
+	return _relay_server_url
 
 
 ## 彻底复位（回菜单时调用）
@@ -378,6 +391,7 @@ func _relay_begin(url: String, room: String, create: bool) -> void:
 	_relay_ws = WebSocketPeer.new()
 	_relay_is_creator = create
 	_relay_room = room
+	_relay_server_url = url
 	_relay_joined = false
 	_relay_join_sent = false
 	var err := _relay_ws.connect_to_url(url)

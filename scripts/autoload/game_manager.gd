@@ -16,6 +16,13 @@ var _entering_battle := false    # 防抖：菜单快速连点时只进一次战
 
 var _on_net_action_fn: Callable
 var _on_net_start_fn: Callable
+var _on_opponent_left_fn: Callable
+
+# ── 对局录像（复盘）收集：开局快照 + 每步操作后的快照；结束/断线时上传服务器 ──
+var _replay_initial: Dictionary = {}
+var _replay_actions: Array = []
+var _replay_snapshots: Array = []
+var _replay_game_id: String = ""
 
 
 func _ready() -> void:
@@ -211,8 +218,10 @@ func _setup_battle() -> void:
 		_submit_local({"type": "attack", "from_row": from_r, "from_col": from_c, "target_row": target_r, "target_col": target_c})
 	)
 
-	# ── 指令被接受后 → 转发对端 + 状态指纹核对 ──
+	# ── 指令被接受后 → 收集录像快照 + 转发对端 + 状态指纹核对 ──
 	turn_manager.action_applied.connect(func(action: Dictionary):
+		_replay_actions.append(action.duplicate())
+		_replay_snapshots.append(ReplayStore.make_snapshot(turn_manager.battle_state))
 		if _applying_remote:
 			return  # 远端指令不再回传
 		if NetworkManager.is_network_game:
@@ -233,7 +242,14 @@ func _setup_battle() -> void:
 
 	turn_manager.game_over.connect(func(winner: int):
 		print("[GameManager] Game Over! Winner: Player %d" % (winner + 1))
+		_finish_replay_and_show_result(winner)
 	)
+
+	# ── 对手断开：对局异常结束，也上传录像并弹结算（服务器 2 小时后自动清理） ──
+	_on_opponent_left_fn = func():
+		if turn_manager != null and turn_manager.battle_state != null and turn_manager.battle_state.winner == -1:
+			_finish_replay_and_show_result(-1)
+	NetworkManager.opponent_disconnected.connect(_on_opponent_left_fn)
 
 	_battle_ready = true
 
@@ -245,6 +261,7 @@ func _setup_battle() -> void:
 		var cards: Array[String] = []
 		cards.assign(deck["cards"])
 		turn_manager.start_game(cards.duplicate(), cards.duplicate(), deck["starter"], deck["starter"])
+		_begin_replay_capture("local-%d" % int(Time.get_unix_time_from_system() * 1000.0))
 		print("[GameManager] Local game started")
 	else:
 		NetworkManager.set_local_scene_ready()
@@ -260,7 +277,35 @@ func _on_net_game_start(payload: Dictionary) -> void:
 	p2_deck.assign(payload.get("p2_deck", []))
 	turn_manager.start_game(p1_deck, p2_deck,
 		str(payload.get("p1_starter", "")), str(payload.get("p2_starter", "")))
+	_begin_replay_capture(NetworkManager.replay_game_id())
 	print("[GameManager] Network game started (local player = P%d)" % (NetworkManager.local_player_idx + 1))
+
+
+# ═══════════════ 对局录像（复盘） ═══════════════
+
+## 开局：拍初始快照（start_game 成功后调用）
+func _begin_replay_capture(game_id: String) -> void:
+	_replay_game_id = game_id
+	_replay_actions.clear()
+	_replay_snapshots.clear()
+	if turn_manager != null and turn_manager.battle_state != null:
+		_replay_initial = ReplayStore.make_snapshot(turn_manager.battle_state)
+	else:
+		_replay_initial = {}
+
+
+## 终局：组装录像 → 后台上传 → 弹结算菜单（winner = -1 表示对局中止）
+func _finish_replay_and_show_result(winner: int) -> void:
+	if turn_manager == null or turn_manager.battle_state == null:
+		return
+	var game_id := _replay_game_id if _replay_game_id != "" else NetworkManager.replay_game_id()
+	var mode := "local" if game_mode == GameMode.LOCAL else "net"
+	var replay := ReplayStore.build_replay(game_id, mode, winner, _replay_initial, _replay_actions, _replay_snapshots)
+	_replay_actions = []       # 防重复上传（断线+game_over 双触发）
+	_replay_snapshots = []
+	ReplayApi.upload(ReplayApi.base_from_ws(NetworkManager.relay_url()) if NetworkManager.relay_url() != "" else ReplayApi.DEFAULT_BASE_URL, replay)
+	var named := game_mode == GameMode.LOCAL
+	ResultMenu.show_result(get_tree().current_scene, replay, NetworkManager.local_player_idx if not named else 0, named, ReplayApi.DEFAULT_BASE_URL)
 
 
 ## 战斗场景退出：复位生命周期，断开挂在常驻 autoload 上的闭包（防打向已释放对象）
@@ -272,8 +317,11 @@ func _on_battle_scene_exited() -> void:
 		NetworkManager.action_received.disconnect(_on_net_action_fn)
 	if _on_net_start_fn != null and NetworkManager.game_start_received.is_connected(_on_net_start_fn):
 		NetworkManager.game_start_received.disconnect(_on_net_start_fn)
+	if _on_opponent_left_fn != null and NetworkManager.opponent_disconnected.is_connected(_on_opponent_left_fn):
+		NetworkManager.opponent_disconnected.disconnect(_on_opponent_left_fn)
 	_on_net_action_fn = Callable()
 	_on_net_start_fn = Callable()
+	_on_opponent_left_fn = Callable()
 
 
 ## 本端输入统一入口：对局无效/结束/非本方回合时拒绝本端输入
