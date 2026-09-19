@@ -26,7 +26,7 @@ jobs:
     name: Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download Godot editor
         run: |
@@ -58,10 +58,10 @@ jobs:
     needs: test
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Cache export templates
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /home/runner/.local/share/godot/export_templates
           key: godot-templates-${{ env.GODOT_VERSION }}
@@ -96,7 +96,7 @@ jobs:
           cd build
           zip -q ../1914-Windows.zip 1914.exe
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: 1914-Windows
           path: 1914-Windows.zip
@@ -113,15 +113,15 @@ jobs:
       KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       KEYSTORE_USER: ${{ secrets.ANDROID_KEYSTORE_USER }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Cache export templates
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /home/runner/.local/share/godot/export_templates
           key: godot-templates-${{ env.GODOT_VERSION }}
@@ -204,7 +204,7 @@ jobs:
       - name: Package 1914-Android.apk
         run: cp build/1914.apk 1914-Android.apk
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: 1914-Android
           path: 1914-Android.apk
@@ -220,14 +220,14 @@ jobs:
       contents: write
     steps:
       # gh release create --generate-notes 需要 git 仓库上下文
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: 1914-Windows
           path: release
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: 1914-Android
           path: release
