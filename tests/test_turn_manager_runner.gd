@@ -226,12 +226,18 @@ func _test_game_over() -> void:
 	print("[game_over]")
 	var tm := _make_tm()
 	tm.start_game(_deck(), _deck(), "test_infantry_01", "test_infantry_01")
-	# 构造 P1 占满 P2 区域（行3-4）每列 → 触发胜利
+	# 占领度胜利：5 线全满只在完整回合边界结算（P2 end_turn 后）
 	for c in range(5):
 		_place_unit(tm.battle_state, 0, 3, c)
+	tm.battle_state.front_control = [100, 100, 100, 100, 100]
 	tm.submit_action({"type": "skip_phase"})  # purchase → deploy
 	tm.submit_action({"type": "skip_phase"})  # deploy → action
-	tm.submit_action({"type": "end_turn"})
+	tm.submit_action({"type": "end_turn"})    # P0 结束 = 半回合 → 不判胜
+	_check(_game_over_winner == -2, "no verdict at half-turn (P1 ends)")
+	_check(tm.battle_state.active_player_index == 1, "turn passed to P2")
+	tm.submit_action({"type": "skip_phase"})  # P2: purchase → deploy
+	tm.submit_action({"type": "skip_phase"})  # P2: deploy → action
+	tm.submit_action({"type": "end_turn"})    # P2 结束 = 完整回合 → 结算判胜
 	_check(_game_over_winner == 0, "game_over(0) emitted")
 	_check(tm.battle_state.winner == 0, "battle_state.winner == 0")
 	_check(tm.battle_state.phase == "game_over", "phase is game_over")

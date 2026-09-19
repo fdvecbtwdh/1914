@@ -85,20 +85,24 @@ func _run_all() -> void:
 ## 胜负边界
 func _test_victory_priority() -> void:
 	print("[victory priority]")
-	# P2 行动结束回合时也检测 P1 胜利
+	# P2（后手）结束回合 = 完整回合边界 → 结算并判胜
 	var st := _fresh_state()
 	st.active_player_index = 1
-	for c in range(5):
-		_place(st, 0, 3, c, "infantry_01")
+	st.front_control = [100, 100, 100, 100, 100]
 	var st2 := GameLogic.end_turn(st)
-	_check(st2.winner == 0, "V1 P1 win detected when P2 ends turn")
-	# 双方同时占满 → P1 优先
+	_check(st2.winner == 0, "V1 P1 win detected at full-round boundary")
+	# P1（先手）结束回合 = 半回合 → 不结算不判胜
 	st = _fresh_state()
-	for c in range(5):
-		_place(st, 0, 3, c, "infantry_01")
-		_place(st, 1, 0, c, "infantry_01")
+	st.front_control = [100, 100, 100, 100, 100]
 	st2 = GameLogic.end_turn(st)
-	_check(st2.winner == 0, "V2 both satisfied -> P1 priority")
+	_check(st2.winner == -1 and st2.active_player_index == 1, "V2 no verdict at half-turn boundary")
+	_check(st2.front_control == [100, 100, 100, 100, 100], "V2b front_control untouched at half-turn")
+	# 未满 5 线 → 不胜
+	st = _fresh_state()
+	st.active_player_index = 1
+	st.front_control = [100, 100, 100, 100, 99]
+	st2 = GameLogic.end_turn(st)
+	_check(st2.winner == -1, "V3 line at 99 blocks victory")
 
 
 ## 资源封顶

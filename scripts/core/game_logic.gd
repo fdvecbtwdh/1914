@@ -258,39 +258,81 @@ static func end_turn(state: BattleState) -> BattleState:
 	# 清空 K/Z
 	new_state.players[new_state.active_player_index].resources["K"] = 0
 	new_state.players[new_state.active_player_index].resources["Z"] = 0
-	# 检测胜利
-	var result := check_victory(new_state)
-	if result != -1:
-		new_state.winner = result
-		new_state.phase = "game_over"
-		return new_state
 	# 切换玩家
 	new_state.active_player_index = 1 - new_state.active_player_index
 	if new_state.active_player_index == 0:
+		# 完整回合结束（双方各行动一个轮次）→ 结算战线占领度
 		new_state.turn += 1
+		_update_front_control(new_state)
+		var fv := check_front_victory(new_state)
+		if fv != -1:
+			new_state.winner = fv
+			new_state.phase = "game_over"
+			return new_state
 	new_state.phase = "draw"
 	return new_state
 
 
-static func check_victory(state: BattleState) -> int:
-	# 占领对方全部5条阵线（每列至少一个己方单位在敌方区域内）
-	# P1 胜：P1 单位在 P2 区域（行3-4）每列都有
-	var p1_cols := {}
-	var p2_cols := {}
+#region 战线占领度（docs/game-mechanics.md 第 5 节）
+
+## 占领贡献权重（仅三种陆军参与，其余兵种不贡献）
+const FRONT_CONTROL_WEIGHTS := {"cavalry": 25, "infantry": 50, "tank": 100}
+
+
+## 每个完整回合结束时结算：逐行统计双方贡献单位
+## 双方并存或均无 → 不变；仅一方有 → 向该方推进权重和，封顶 ±100
+static func _update_front_control(state: BattleState) -> void:
+	while state.front_control.size() < state.board.rows:
+		state.front_control.append(0)  # 兜底：未经 setup() 的 state
 	for r in range(state.board.rows):
+		var p0_score: int = 0
+		var p1_score: int = 0
 		for c in range(state.board.cols):
 			var unit: BattleState.UnitData = state.board.get_unit(r, c)
 			if unit == null:
 				continue
-			if unit.owner_index == 0 and r >= 3:
-				p1_cols[c] = true
-			elif unit.owner_index == 1 and r <= 1:
-				p2_cols[c] = true
-	if p1_cols.size() == state.board.cols:
+			var weight: int = _front_weight(unit.card_id)
+			if weight == 0:
+				continue
+			if unit.owner_index == 0:
+				p0_score += weight
+			else:
+				p1_score += weight
+		if p0_score > 0 and p1_score > 0:
+			continue  # 双方并存，战线僵持
+		if p0_score > 0:
+			state.front_control[r] = clampi(state.front_control[r] + p0_score, -100, 100)
+		elif p1_score > 0:
+			state.front_control[r] = clampi(state.front_control[r] - p1_score, -100, 100)
+		# 均无贡献单位 → 保持不变（已占领战线维持占领）
+
+
+static func _front_weight(card_id: String) -> int:
+	# 按卡牌数据声明的兵种（unit_class）取权重，而非 id 前缀
+	var card_data: Resource = CardDataLoader.cards.get(card_id)
+	if card_data == null:
 		return 0
-	if p2_cols.size() == state.board.cols:
+	return FRONT_CONTROL_WEIGHTS.get(card_data.unit_class, 0)
+
+
+## 5 条战线全部到 +100 → P1 胜；全部到 -100 → P2 胜
+static func check_front_victory(state: BattleState) -> int:
+	if state.front_control.size() < state.board.rows:
+		return -1
+	var all_p0 := true
+	var all_p1 := true
+	for r in range(state.board.rows):
+		if state.front_control[r] < 100:
+			all_p0 = false
+		if state.front_control[r] > -100:
+			all_p1 = false
+	if all_p0:
+		return 0
+	if all_p1:
 		return 1
 	return -1
+
+#endregion
 
 
 ## Phase 3: 战争点公式
@@ -499,6 +541,27 @@ static func _refresh_guards(state: BattleState) -> void:
 
 #region Phase 3: 视野判定
 
+## 计算视角玩家的全部可见格子（docs/game-mechanics.md 4.1）
+## UI 层用它渲染格子级迷雾：不在返回集合中的格子一律覆盖迷雾
+static func compute_visible_cells(state: BattleState, viewer_idx: int) -> Dictionary:
+	var visible: Dictionary = {}  # {Vector2i: true}
+	for r in range(state.board.rows):
+		for c in range(state.board.cols):
+			var unit: BattleState.UnitData = state.board.get_unit(r, c)
+			if unit == null or unit.owner_index != viewer_idx:
+				continue
+			# 我方单位所在格始终可见（兵种视野不含自身脚下）
+			visible[Vector2i(r, c)] = true
+			var card_data: Resource = CardDataLoader.cards.get(unit.card_id)
+			if card_data == null:
+				continue
+			for tr in range(state.board.rows):
+				for tc in range(state.board.cols):
+					if _in_vision_range(card_data.vision_range, r, c, tr, tc, viewer_idx):
+						visible[Vector2i(tr, tc)] = true
+	return visible
+
+
 ## 视野范围判定（与攻击范围判定分开）
 static func _in_vision_range(vision_str: String, from_row: int, from_col: int, to_row: int, to_col: int, owner_idx: int) -> bool:
 	var dr := to_row - from_row  # 带符号的方向
@@ -613,6 +676,7 @@ static func state_fingerprint(state: BattleState) -> String:
 	parts.append(state.phase)
 	parts.append("a%d" % state.active_player_index)
 	parts.append("w%d" % state.winner)
+	parts.append("fc%s" % str(state.front_control))
 	for pi in range(state.players.size()):
 		var p = state.players[pi]
 		parts.append("p%d:g%d,k%d,z%d" % [pi, p.resources["G"], p.resources["K"], p.resources["Z"]])

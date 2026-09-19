@@ -31,7 +31,9 @@ func _run_all() -> void:
 	_test_counter_attack()
 	_test_artillery_no_counter()
 	_test_end_turn()
-	_test_check_victory()
+	_test_front_control()
+	_test_front_victory()
+	_test_visible_cells()
 
 
 func _check(cond: bool, msg: String) -> void:
@@ -258,22 +260,97 @@ func _test_end_turn() -> void:
 	_check(st3.active_player_index == 0 and st3.turn == 2, "turn 2 starts after both players act")
 
 
-func _test_check_victory() -> void:
-	print("[check_victory]")
+func _test_front_control() -> void:
+	print("[front_control]")
 	var st := _make_init_state()
-	_check(GameLogic.check_victory(st) == -1, "no victory on empty board")
-	# P1 占满 P2 区域（行3-4）每列
-	var st_p1 := _make_init_state()
-	for c in range(5):
-		_place_unit(st_p1, 0, 3, c, 2, 3)
-	_check(GameLogic.check_victory(st_p1) == 0, "P1 wins by occupying all cols of rows 3-4")
-	# P2 占满 P1 区域（行0-1）每列
-	var st_p2 := _make_init_state()
-	for c in range(5):
-		_place_unit(st_p2, 1, 0, c, 2, 3)
-	_check(GameLogic.check_victory(st_p2) == 1, "P2 wins by occupying all cols of rows 0-1")
-	# 部分占领不算赢
-	var st_part := _make_init_state()
-	for c in range(4):
-		_place_unit(st_part, 0, 3, c, 2, 3)
-	_check(GameLogic.check_victory(st_part) == -1, "partial occupation is not a win")
+	_check(st.front_control == [0, 0, 0, 0, 0], "initial front control all zero")
+	# 空战线结算不变
+	GameLogic._update_front_control(st)
+	_check(st.front_control == [0, 0, 0, 0, 0], "empty rows unchanged")
+	# 单步兵 +50（行 0）
+	_place_unit(st, 0, 0, 0, 2, 3)
+	GameLogic._update_front_control(st)
+	_check(st.front_control[0] == 50, "one infantry = +50")
+	# 坦克 +100（行 1）
+	_place_unit(st, 0, 1, 0, 2, 3, "tank_01")
+	GameLogic._update_front_control(st)
+	_check(st.front_control[1] == 100, "one tank = +100")
+	# 骑兵 25×2 = +50（行 2）
+	_place_unit(st, 0, 2, 0, 2, 3, "cavalry_01")
+	_place_unit(st, 0, 2, 1, 2, 3, "cavalry_01")
+	GameLogic._update_front_control(st)
+	_check(st.front_control[2] == 50, "two cavalry = +50")
+	# 双方并存 → 僵持不变（行 3）
+	_place_unit(st, 0, 3, 0, 2, 3)
+	_place_unit(st, 1, 3, 1, 2, 3)
+	GameLogic._update_front_control(st)
+	_check(st.front_control[3] == 0, "both sides present -> unchanged")
+	# P1 坦克 → -100（行 4）
+	_place_unit(st, 1, 4, 0, 2, 3, "tank_01")
+	GameLogic._update_front_control(st)
+	_check(st.front_control[4] == -100, "enemy tank = -100")
+	# 非占领兵种（火炮）不贡献
+	_place_unit(st, 0, 3, 2, 2, 3, "artillery_01")
+	GameLogic._update_front_control(st)
+	_check(st.front_control[3] == 0, "artillery does not contribute")
+	# 封顶 +100：行 0/2 再结算一轮（单位仍在）50 → 100
+	GameLogic._update_front_control(st)
+	_check(st.front_control[0] == 100 and st.front_control[2] == 100, "values clamp at +100")
+	# 夺回：行 4 清掉 P1 坦克，P0 步兵进驻 → -100 + 50 = -50
+	st.board.set_unit(4, 0, null)
+	_place_unit(st, 0, 4, 1, 2, 3)
+	GameLogic._update_front_control(st)
+	_check(st.front_control[4] == -50, "recapture: -100 -> -50 with one infantry")
+	# 已占领战线单位清空 → 保持
+	st.board.set_unit(1, 0, null)
+	GameLogic._update_front_control(st)
+	_check(st.front_control[1] == 100, "occupied line holds when vacated")
+	# 4 回合夺回节奏：+100 被敌方 1 步兵逐回合 -50
+	var st2 := _make_init_state()
+	st2.front_control[0] = 100
+	_place_unit(st2, 1, 0, 0, 2, 3)
+	GameLogic._update_front_control(st2)
+	_check(st2.front_control[0] == 50, "turn 1: 100 -> 50")
+	GameLogic._update_front_control(st2)
+	_check(st2.front_control[0] == 0, "turn 2: 50 -> 0")
+	GameLogic._update_front_control(st2)
+	_check(st2.front_control[0] == -50, "turn 3: 0 -> -50")
+	GameLogic._update_front_control(st2)
+	_check(st2.front_control[0] == -100, "turn 4: -50 -> -100 (captured)")
+
+
+func _test_front_victory() -> void:
+	print("[front_victory]")
+	var st := _make_init_state()
+	_check(GameLogic.check_front_victory(st) == -1, "no victory at all zeros")
+	st.front_control = [100, 100, 100, 100, 100]
+	_check(GameLogic.check_front_victory(st) == 0, "P1 wins with 5 lines at +100")
+	st.front_control = [-100, -100, -100, -100, -100]
+	_check(GameLogic.check_front_victory(st) == 1, "P2 wins with 5 lines at -100")
+	st.front_control = [100, 100, 100, 100, -100]
+	_check(GameLogic.check_front_victory(st) == -1, "mixed extremes not a win")
+	st.front_control = [100, 100, 100, 100, 99]
+	_check(GameLogic.check_front_victory(st) == -1, "4 lines at 100 is not a win")
+
+
+func _test_visible_cells() -> void:
+	print("[visible_cells]")
+	var st := _make_init_state()
+	# 无己方单位 → 全图迷雾
+	var vis := GameLogic.compute_visible_cells(st, 0)
+	_check(vis.is_empty(), "empty board -> nothing visible")
+	# P0 步兵在 (1,1)，视野 adjacent_4 → 自身 + 上下左右
+	_place_unit(st, 0, 1, 1, 2, 3)
+	vis = GameLogic.compute_visible_cells(st, 0)
+	_check(vis.size() == 5, "infantry adjacent_4 sees self + 4 cells, got %d" % vis.size())
+	_check(vis.has(Vector2i(1, 1)), "own cell always visible")
+	_check(vis.has(Vector2i(0, 1)) and vis.has(Vector2i(2, 1)), "vertical vision")
+	_check(vis.has(Vector2i(1, 0)) and vis.has(Vector2i(1, 2)), "horizontal vision")
+	_check(not vis.has(Vector2i(0, 0)), "diagonal outside adjacent_4 vision")
+	# P1 视角看不到 P0 单位的视野
+	var vis_p2 := GameLogic.compute_visible_cells(st, 1)
+	_check(vis_p2.is_empty(), "enemy viewer sees nothing")
+	# 潜行只影响单位显示，不影响格子可见性判定
+	_place_unit(st, 1, 3, 3, 2, 3)  # 敌方单位位置本身可被视野判定
+	vis = GameLogic.compute_visible_cells(st, 0)
+	_check(not vis.has(Vector2i(3, 3)), "distant enemy cell stays fogged")

@@ -634,30 +634,32 @@ func _test_hand_limit() -> void:
 
 func _test_victory_and_edges() -> void:
 	print("[victory & edges]")
-	# K1 P1 占满 rows3-4 全列 → 胜
+	# K1 占领度 5 线全满 + 完整回合边界（P2 结束）→ P1 胜
 	var st := _fresh_state()
-	for c in range(5):
-		_place(st, 0, 3, c, "infantry_01")
+	st.front_control = [100, 100, 100, 100, 100]
+	st.active_player_index = 1
 	var st2 := GameLogic.end_turn(st)
-	_check(st2.winner == 0, "K1 P1 wins with all 5 columns in P2 zone")
-	# K2 只占 4 列不胜
+	_check(st2.winner == 0, "K1 P1 wins when all 5 lines at +100")
+	# K2 只占 4 线不胜
 	st = _fresh_state()
-	for c in range(4):
-		_place(st, 0, 3, c, "infantry_01")
+	st.front_control = [100, 100, 100, 100, 0]
+	st.active_player_index = 1
 	st2 = GameLogic.end_turn(st)
-	_check(st2.winner == -1, "K2 4 columns is not a win")
-	# K3 P2 占满 rows0-1 → P2 胜
+	_check(st2.winner == -1, "K2 4 lines occupied is not a win")
+	# K3 5 线 -100 → P2 胜
 	st = _fresh_state()
-	for c in range(5):
-		_place(st, 1, 0, c, "infantry_01")
+	st.front_control = [-100, -100, -100, -100, -100]
+	st.active_player_index = 1
 	st2 = GameLogic.end_turn(st)
-	_check(st2.winner == 1, "K3 P2 wins with all 5 columns in P1 zone")
-	# K4 己方区域不算（P1 单位只在 rows0-1）
+	_check(st2.winner == 1, "K3 P2 wins when all 5 lines at -100")
+	# K4 结算推进：P0 步兵在行 4，行 4 由 -100 回升
 	st = _fresh_state()
-	for c in range(5):
-		_place(st, 0, 0, c, "infantry_01")
+	st.front_control = [0, 0, 0, 0, -100]
+	_place(st, 0, 4, 0, "infantry_01")
+	st.active_player_index = 1
 	st2 = GameLogic.end_turn(st)
-	_check(st2.winner == -1, "K4 units in own zone do not win")
+	_check(st2.front_control[4] == -50, "K4 infantry recaptures line (-100 -> -50)")
+	_check(st2.winner == -1, "K4 partial recapture is not a win")
 	# K5 牌堆抽空不崩溃
 	st = _fresh_state()
 	st.players[0].deck = []

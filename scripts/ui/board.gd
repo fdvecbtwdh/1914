@@ -28,11 +28,19 @@ var _selected_unit_pos: Vector2i = Vector2i(-1, -1)
 var _p1_marker: Label = null
 var _p2_marker: Label = null
 
+## 格子级迷雾（docs/game-mechanics.md 4.1）：不可见格子全部覆盖
+var _fog_layer: Control = null
+var _fog_rects: Dictionary = {}   # {Vector2i: ColorRect}
+## 战线占领度行标签（docs/game-mechanics.md 第 5 节）
+var _front_labels: Array[Label] = []
+
 
 func _ready() -> void:
 	print("[Board] Ready — waiting for TurnManager")
 	_recalc_grid_offset()
 	_create_board()
+	_create_fog_layer()
+	_create_front_labels()
 	get_tree().root.size_changed.connect(_on_window_resized)
 
 
@@ -54,6 +62,7 @@ func _on_window_resized() -> void:
 	_recalc_grid_offset()
 	_reposition_all_slots()
 	_reposition_markers()
+	_reposition_fog_and_labels()
 	if turn_manager and turn_manager.battle_state:
 		_on_state_changed(turn_manager.battle_state)
 
@@ -118,6 +127,7 @@ func _on_state_changed(new_state: BattleState) -> void:
 	_update_markers(new_state.active_player_index)
 	_render_units(new_state)
 	_update_visibility(new_state)
+	_update_front_labels(new_state)
 
 
 func _update_markers(active_idx: int) -> void:
@@ -164,27 +174,13 @@ func _render_units(state: BattleState) -> void:
 			_unit_displays[Vector2i(row, col)] = display
 
 
-## Phase 3: 迷雾可见性计算
+## Phase 3: 迷雾可见性计算（引擎纯函数）+ 格子级迷雾渲染（4.1）
 func _update_visibility(state: BattleState) -> void:
 	if state == null:
 		return
 	var viewer_idx := _viewer_idx(state)
-	# 1. 收集本方所有单位的视野覆盖格子
-	var visible_cells: Dictionary = {}  # {Vector2i: true}
-	for r in range(state.board.rows):
-		for c in range(state.board.cols):
-			var unit := state.board.get_unit(r, c)
-			if unit == null or unit.owner_index != viewer_idx:
-				continue
-			var card_data: Resource = CardDataLoader.cards.get(unit.card_id)
-			if card_data == null:
-				continue
-			# 遍历棋盘所有格子，判定是否在此单位的视野内
-			for tr in range(state.board.rows):
-				for tc in range(state.board.cols):
-					if GameLogic._in_vision_range(card_data.vision_range, r, c, tr, tc, viewer_idx):
-						visible_cells[Vector2i(tr, tc)] = true
-	# 2. 更新每个敌方单位的显示
+	var visible_cells := GameLogic.compute_visible_cells(state, viewer_idx)
+	# 1. 更新每个敌方单位的显示（潜行规则不变）
 	for r in range(state.board.rows):
 		for c in range(state.board.cols):
 			var unit := state.board.get_unit(r, c)
@@ -194,8 +190,89 @@ func _update_visibility(state: BattleState) -> void:
 			var display: CardDisplay = _unit_displays.get(key)
 			if display == null or not is_instance_valid(display):
 				continue
-			var is_visible := visible_cells.has(key)
-			display.set_visible_to_enemy(is_visible, unit.stealthed, unit.revealed)
+			display.set_visible_to_enemy(visible_cells.has(key), unit.stealthed, unit.revealed)
+	# 2. 格子级迷雾：所有不可见格子一律覆盖
+	_apply_fog_layer(state, visible_cells)
+
+
+## ── 格子级迷雾层（盖在单位卡之上：z_index 高于默认 0）──
+
+func _create_fog_layer() -> void:
+	_fog_layer = Control.new()
+	_fog_layer.name = "_fog_layer"
+	_fog_layer.z_index = 100
+	_fog_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_fog_layer)
+
+
+func _apply_fog_layer(state: BattleState, visible_cells: Dictionary) -> void:
+	if _fog_layer == null:
+		return
+	for r in range(state.board.rows):
+		for c in range(state.board.cols):
+			var key := Vector2i(r, c)
+			var rect: ColorRect = _fog_rects.get(key)
+			if rect == null or not is_instance_valid(rect):
+				rect = ColorRect.new()
+				rect.size = SLOT_SIZE
+				rect.color = Color(0.15, 0.15, 0.15, 1.0)
+				rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				rect.position = _grid_offset + Vector2(c * SLOT_SPACING.x, r * SLOT_SPACING.y)
+				_fog_layer.add_child(rect)
+				_fog_rects[key] = rect
+			rect.visible = not visible_cells.has(key)
+
+
+func _reposition_fog_and_labels() -> void:
+	for key in _fog_rects:
+		var rect: ColorRect = _fog_rects[key]
+		if is_instance_valid(rect):
+			rect.position = _grid_offset + Vector2(key.y * SLOT_SPACING.x, key.x * SLOT_SPACING.y)
+	_reposition_front_labels()
+
+
+## ── 战线占领度行标签（每行左侧）──
+
+func _create_front_labels() -> void:
+	var state := turn_manager.get_state() if turn_manager else null
+	var rows := state.board.rows if state != null else GRID_SIZE
+	for r in range(rows):
+		var lbl := Label.new()
+		lbl.text = "0"
+		lbl.add_theme_font_size_override("font_size", 12)
+		lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7, 1.0))
+		lbl.position = _front_label_pos(r)
+		add_child(lbl)
+		_front_labels.append(lbl)
+
+
+func _front_label_pos(row: int) -> Vector2:
+	var row_center_y := _grid_offset.y + row * SLOT_SPACING.y + SLOT_SIZE.y / 2.0 - 9
+	return Vector2(max(2.0, _grid_offset.x - 46.0), row_center_y)
+
+
+func _reposition_front_labels() -> void:
+	for r in range(_front_labels.size()):
+		_front_labels[r].position = _front_label_pos(r)
+
+
+func _update_front_labels(state: BattleState) -> void:
+	for r in range(_front_labels.size()):
+		if r >= state.front_control.size():
+			break
+		var v: int = state.front_control[r]
+		var lbl := _front_labels[r]
+		lbl.text = "+%d" % v if v > 0 else str(v)
+		if v >= 100:
+			lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2, 1.0))  # 金色 = 完全占领
+		elif v <= -100:
+			lbl.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3, 1.0))   # 红色 = 敌方完全占领
+		elif v > 0:
+			lbl.add_theme_color_override("font_color", Color(0.4, 0.65, 1.0, 1.0))  # 蓝 = P1 占优
+		elif v < 0:
+			lbl.add_theme_color_override("font_color", Color(1.0, 0.5, 0.5, 1.0))   # 红 = P2 占优
+		else:
+			lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7, 1.0))   # 灰 = 中立
 
 
 func _update_unit_stats(display: Control, atk: int, df: int) -> void:

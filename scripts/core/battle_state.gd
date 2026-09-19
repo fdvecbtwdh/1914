@@ -83,6 +83,9 @@ class BoardData:
 @export var active_player_index: int = 0
 @export var winner: int = -1
 @export var action_log: Array[Dictionary] = []
+## 战线占领度（每行一条，索引 = 行号）：[-100, +100]
+## 正值 = P1（owner 0）占优，负值 = P2（owner 1）占优，初始 0
+@export var front_control: Array[int] = []
 
 func setup(p1_deck: Array[String], p2_deck: Array[String], p1_starter: String, p2_starter: String) -> void:
 	players.clear()
@@ -99,3 +102,6 @@ func setup(p1_deck: Array[String], p2_deck: Array[String], p1_starter: String, p
 	active_player_index = 0
 	winner = -1
 	action_log.clear()
+	front_control.clear()
+	for r in range(board.rows):
+		front_control.append(0)
