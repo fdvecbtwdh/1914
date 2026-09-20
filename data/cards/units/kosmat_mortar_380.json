@@ -1,0 +1,31 @@
+{
+  "id": "kosmat_mortar_380",
+  "name": "380mm 柯斯达迫击炮",
+  "nation": "german_empire",
+  "unit_class": "artillery",
+  "cost_g": 148,
+  "cost_z": 5,
+  "attack": 4,
+  "defense": 4,
+  "vision_range": "adjacent_8",
+  "attack_range": "global",
+  "abilities": [
+    "响应"
+  ],
+  "passives": [
+    "ignore_fort"
+  ],
+  "rarity": "silver",
+  "effect_text": "无视「工事」；压制被其攻击目标左右两格内的单位。",
+  "triggers": {
+    "on_damage_dealt": {
+      "actions": [
+        {
+          "op": "suppress_area"
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "flavor_text": "1914.fun 社区卡牌"
+}

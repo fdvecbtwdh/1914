@@ -33,6 +33,8 @@ class UnitData:
 	@export var is_air: bool = false                 # 空军图层（false = 地面图层）
 	@export var patrolling: bool = false             # 战斗机巡逻中（回合结束自动确认，见文档 3A）
 	@export var retreated: bool = false              # 本回合已后退（后退消耗全部行动）
+	@export var suppressed: bool = false             # 被压制（6A：下个拥有者回合无法移动和攻击）
+	@export var trigger_log: Dictionary = {}         # once_per_turn 触发记录 {key: turn}
 
 
 class PlayerData:
@@ -108,6 +110,8 @@ class BoardData:
 ## 战线占领度（每行一条，索引 = 行号）：[-100, +100]
 ## 正值 = P1（owner 0）占优，负值 = P2（owner 1）占优，初始 0
 @export var front_control: Array[int] = []
+## 6A.4 卡牌模板修改（「全卡数值-1」类效果）：{card_id: {atk: int, def: int}}
+@export var card_mods: Dictionary = {}
 
 func setup(p1_deck: Array[String], p2_deck: Array[String], p1_starter: String, p2_starter: String) -> void:
 	players.clear()
@@ -127,3 +131,4 @@ func setup(p1_deck: Array[String], p2_deck: Array[String], p1_starter: String, p
 	front_control.clear()
 	for r in range(board.rows):
 		front_control.append(0)
+	card_mods.clear()

@@ -1,0 +1,43 @@
+{
+  "id": "minerva_1914",
+  "name": "比利时密涅瓦装甲车 1914 型",
+  "nation": "neutral",
+  "unit_class": "tank",
+  "cost_g": 28,
+  "cost_z": 2,
+  "attack": 2,
+  "defense": 2,
+  "vision_range": "adjacent_8",
+  "attack_range": "adjacent_8",
+  "abilities": [
+    "冲锋",
+    "响应",
+    "潜行"
+  ],
+  "rarity": "common",
+  "effect_text": "部署：压制一个单位。亡计：若敌方主国为德国，友方失去 24 点生产费用。",
+  "triggers": {
+    "on_deploy": {
+      "actions": [
+        {
+          "op": "suppress",
+          "count": 1
+        }
+      ]
+    },
+    "on_death": {
+      "filter": {
+        "enemy_nation": "german_empire"
+      },
+      "actions": [
+        {
+          "op": "economy",
+          "who": "self",
+          "amount": -24
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "flavor_text": "1914.fun 社区卡牌"
+}

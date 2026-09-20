@@ -1,0 +1,31 @@
+{
+  "id": "gota_g2_proto",
+  "name": "戈塔 G.II 原型机",
+  "nation": "german_empire",
+  "unit_class": "bomber",
+  "cost_g": 60,
+  "cost_z": 3,
+  "attack": 2,
+  "defense": 2,
+  "vision_range": "front_3x2",
+  "attack_range": "column_and_neighbors",
+  "abilities": [
+    "突击",
+    "响应"
+  ],
+  "rarity": "silver",
+  "effect_text": "部署：开发一张戈塔 G 系列轰炸机。",
+  "triggers": {
+    "on_deploy": {
+      "actions": [
+        {
+          "op": "add_to_hand",
+          "card_id": "gota_g4",
+          "count": 1
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "flavor_text": "1914.fun 社区卡牌"
+}

@@ -50,6 +50,8 @@ func submit_action(action: Dictionary) -> void:
 			new_state = GameLogic.attack_unit(battle_state, player_idx, action.get("from_row", -1), action.get("from_col", -1), action.get("target_row", -1), action.get("target_col", -1))
 		"build_fort":
 			new_state = GameLogic.build_fort(battle_state, player_idx, action.get("from_row", -1), action.get("from_col", -1), action.get("row", -1), action.get("col", -1))
+		"play_order":
+			new_state = GameLogic.play_order(battle_state, player_idx, action.get("card_id", ""), action.get("row", -1), action.get("col", -1))
 		"end_turn":
 			new_state = GameLogic.end_turn(battle_state)
 			if new_state.winner == -1:
@@ -106,7 +108,7 @@ func _phase_allows(phase: String, action_type: String) -> bool:
 
 
 func _is_known_type(action_type: String) -> bool:
-	return action_type == "purchase" or action_type == "deploy" or action_type == "move" or action_type == "attack" or action_type == "end_turn" or action_type == "skip_phase" or action_type == "build_fort"
+	return action_type == "purchase" or action_type == "deploy" or action_type == "move" or action_type == "attack" or action_type == "end_turn" or action_type == "skip_phase" or action_type == "build_fort" or action_type == "play_order"
 
 
 func get_state() -> BattleState:

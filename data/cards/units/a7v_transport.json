@@ -1,0 +1,31 @@
+{
+  "id": "a7v_transport",
+  "name": "A7V-R 运输型",
+  "nation": "german_empire",
+  "unit_class": "tank",
+  "cost_g": 172,
+  "cost_z": 6,
+  "attack": 3,
+  "defense": 5,
+  "vision_range": "adjacent_8",
+  "attack_range": "adjacent_8",
+  "abilities": [
+    "坚守2",
+    "守护"
+  ],
+  "rarity": "silver",
+  "effect_text": "进入一条战线时，在该线加入 2 个步兵。",
+  "triggers": {
+    "on_enter_line": {
+      "actions": [
+        {
+          "op": "spawn_adjacent",
+          "card_id": "infantry_01",
+          "count": 2
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "flavor_text": "1914.fun 社区卡牌"
+}

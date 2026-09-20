@@ -1,0 +1,34 @@
+{
+  "id": "bavarian_reserve_16",
+  "name": "第 16 巴伐利亚后备团",
+  "nation": "german_empire",
+  "unit_class": "infantry",
+  "cost_g": 24,
+  "cost_z": 2,
+  "attack": 2,
+  "defense": 3,
+  "vision_range": "adjacent_4",
+  "attack_range": "adjacent_8",
+  "abilities": [
+    "突击",
+    "响应"
+  ],
+  "rarity": "common",
+  "effect_text": "友方奥匈单位部署时，将一张「铁十字勋章」加入手牌。",
+  "triggers": {
+    "on_friendly_deploy": {
+      "filter": {
+        "nation": "austro_hungarian"
+      },
+      "actions": [
+        {
+          "op": "add_to_hand",
+          "card_id": "iron_cross",
+          "count": 1
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "flavor_text": "1914.fun 社区卡牌"
+}

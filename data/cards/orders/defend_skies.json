@@ -1,0 +1,25 @@
+{
+  "id": "defend_skies",
+  "name": "保卫领空",
+  "type": "order",
+  "nation": "british_empire",
+  "cost_g": 0,
+  "cost_k": 5,
+  "rarity": "gold",
+  "effect_text": "使 2 架英国战斗机进入底线支援，结束本回合。",
+  "triggers": {
+    "on_play": {
+      "end_turn_after": true,
+      "actions": [
+        {
+          "op": "spawn",
+          "card_id": "fighter_02",
+          "count": 2,
+          "where": "rear_line"
+        }
+      ]
+    }
+  },
+  "abilities": [],
+  "flavor_text": "1914.fun 社区卡牌"
+}

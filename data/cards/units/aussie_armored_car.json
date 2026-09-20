@@ -1,0 +1,22 @@
+{
+  "id": "aussie_armored_car",
+  "name": "澳大利亚一号装甲车",
+  "nation": "british_empire",
+  "unit_class": "tank",
+  "cost_g": 24,
+  "cost_z": 1,
+  "attack": 0,
+  "defense": 2,
+  "vision_range": "adjacent_8",
+  "attack_range": "adjacent_8",
+  "abilities": [
+    "潜行"
+  ],
+  "passives": [
+    "cannot_attack"
+  ],
+  "rarity": "gold",
+  "effect_text": "无法攻击。（油费减免效果依赖油费系统，暂缓）",
+  "type": "unit",
+  "flavor_text": "1914.fun 社区卡牌"
+}

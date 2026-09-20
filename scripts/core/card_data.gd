@@ -62,6 +62,12 @@ func _load_card(file_path: String) -> void:
     card.rarity = data.get("rarity", "common")
     card.art = data.get("art", "")
     card.flavor_text = data.get("flavor_text", "")
+    # 6A 效果系统新字段（2026-09-20）
+    card.cost_k = data.get("cost_k", 0)
+    card.cost_oil = data.get("cost_oil", 0)
+    card.effect_text = data.get("effect_text", "")
+    card.triggers = data.get("triggers", {})
+    card.passives = data.get("passives", [])
     cards[card.id] = card
 
 # 卡牌数据结构，对应 JSON 中一张卡牌的所有字段
@@ -83,3 +89,9 @@ class CardData:
     @export var rarity: String = "common"   # common / silver / gold
     @export var art: String = ""
     @export var flavor_text: String = ""
+    # 6A 效果系统（2026-09-20）
+    @export var cost_k: int = 0             # 指令卡 K 费
+    @export var cost_oil: int = 0           # 油费（暂不消耗，见文档 6A.5）
+    @export var effect_text: String = ""    # 效果描述（UI 显示）
+    @export var triggers: Dictionary = {}   # {trigger_name: [effect, ...]}
+    @export var passives: Array = []        # 被动声明（如 "cannot_be_attacked_by:fighter"）

@@ -1,0 +1,37 @@
+{
+  "id": "kaiser_wilhelm_cannon",
+  "name": "威廉皇帝炮（巴黎巨炮）",
+  "nation": "german_empire",
+  "unit_class": "artillery",
+  "cost_g": 148,
+  "cost_z": 6,
+  "attack": 4,
+  "defense": 5,
+  "vision_range": "global",
+  "attack_range": "global",
+  "abilities": [
+    "坚守2",
+    "修复3",
+    "潜行"
+  ],
+  "rarity": "silver",
+  "effect_text": "一回合一次，攻击敌方陆军时将其压制，并使敌方失去 54 点生产费用。",
+  "triggers": {
+    "on_damage_dealt": {
+      "once_per_turn": true,
+      "actions": [
+        {
+          "op": "suppress",
+          "count": 1
+        },
+        {
+          "op": "economy",
+          "who": "enemy",
+          "amount": -54
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "flavor_text": "1914.fun 社区卡牌"
+}

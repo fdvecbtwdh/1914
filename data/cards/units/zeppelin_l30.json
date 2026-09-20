@@ -1,0 +1,27 @@
+{
+  "id": "zeppelin_l30",
+  "name": "齐柏林 L30 飞艇（LZ 62）",
+  "nation": "german_empire",
+  "unit_class": "bomber",
+  "cost_g": 72,
+  "cost_z": 6,
+  "attack": 3,
+  "defense": 4,
+  "vision_range": "front_3x2",
+  "attack_range": "column_and_neighbors",
+  "rarity": "silver",
+  "effect_text": "攻击时随机消灭一个生产费用不大于 84 的敌方单位。",
+  "triggers": {
+    "on_damage_dealt": {
+      "actions": [
+        {
+          "op": "destroy_random",
+          "max_cost": 84
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "abilities": [],
+  "flavor_text": "1914.fun 社区卡牌"
+}

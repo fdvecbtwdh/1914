@@ -1,0 +1,27 @@
+{
+  "id": "gota_g3",
+  "name": "戈塔 G.III",
+  "nation": "german_empire",
+  "unit_class": "bomber",
+  "cost_g": 96,
+  "cost_z": 3,
+  "attack": 3,
+  "defense": 2,
+  "vision_range": "front_3x2",
+  "attack_range": "column_and_neighbors",
+  "rarity": "common",
+  "effect_text": "亡计：转化为「戈塔 G.IV」。",
+  "triggers": {
+    "on_death": {
+      "actions": [
+        {
+          "op": "transform",
+          "to": "gota_g4"
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "abilities": [],
+  "flavor_text": "1914.fun 社区卡牌"
+}

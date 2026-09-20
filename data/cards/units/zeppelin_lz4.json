@@ -1,0 +1,40 @@
+{
+  "id": "zeppelin_lz4",
+  "name": "齐柏林 LZ 4 飞艇",
+  "nation": "german_empire",
+  "unit_class": "bomber",
+  "cost_g": 100,
+  "cost_z": 2,
+  "attack": 0,
+  "defense": 3,
+  "vision_range": "front_3x2",
+  "attack_range": "column_and_neighbors",
+  "abilities": [
+    "响应"
+  ],
+  "rarity": "common",
+  "effect_text": "部署：生产「齐柏林飞艇」；亡计获得 164 点生产费用。",
+  "triggers": {
+    "on_deploy": {
+      "actions": [
+        {
+          "op": "spawn",
+          "card_id": "zeppelin_proto",
+          "count": 1,
+          "where": "shop"
+        }
+      ]
+    },
+    "on_death": {
+      "actions": [
+        {
+          "op": "economy",
+          "who": "self",
+          "amount": 164
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "flavor_text": "1914.fun 社区卡牌"
+}

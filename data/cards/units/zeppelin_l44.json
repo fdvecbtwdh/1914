@@ -1,0 +1,20 @@
+{
+  "id": "zeppelin_l44",
+  "name": "齐柏林 L44 飞艇（LZ 74）",
+  "nation": "german_empire",
+  "unit_class": "bomber",
+  "cost_g": 192,
+  "cost_z": 7,
+  "attack": 4,
+  "defense": 4,
+  "vision_range": "front_3x2",
+  "attack_range": "column_and_neighbors",
+  "passives": [
+    "taunt"
+  ],
+  "rarity": "silver",
+  "effect_text": "敌方只能优先攻击本单位（嘲讽）。",
+  "type": "unit",
+  "abilities": [],
+  "flavor_text": "1914.fun 社区卡牌"
+}

@@ -1,0 +1,36 @@
+{
+  "id": "rolls_royce_1914",
+  "name": "劳斯莱斯装甲车 1914 型",
+  "nation": "british_empire",
+  "unit_class": "tank",
+  "cost_g": 66,
+  "cost_z": 3,
+  "attack": 2,
+  "defense": 4,
+  "vision_range": "adjacent_8",
+  "attack_range": "adjacent_8",
+  "abilities": [
+    "突击",
+    "冲锋",
+    "响应"
+  ],
+  "rarity": "silver",
+  "effect_text": "使敌方单位受伤时，揭示 1 个敌方潜行单位并使其 -1/-1。",
+  "triggers": {
+    "on_damage_dealt": {
+      "actions": [
+        {
+          "op": "reveal_stealth",
+          "count": 1
+        },
+        {
+          "op": "debuff_target",
+          "atk": -1,
+          "def": -1
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "flavor_text": "1914.fun 社区卡牌"
+}

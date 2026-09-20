@@ -222,6 +222,9 @@ func _setup_battle() -> void:
 	hand.end_turn_pressed.connect(func():
 		_submit_local({"type": "end_turn"})
 	)
+	hand.order_played.connect(func(card_id: String):
+		_submit_local({"type": "play_order", "card_id": card_id})
+	)
 	hand.skip_phase_pressed.connect(func():
 		_submit_local({"type": "skip_phase"})
 	)

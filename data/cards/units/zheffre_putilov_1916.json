@@ -1,0 +1,53 @@
+{
+  "id": "zheffre_putilov_1916",
+  "name": "杰弗里-普季洛夫 1916",
+  "nation": "russian_empire",
+  "unit_class": "tank",
+  "cost_g": 88,
+  "cost_z": 5,
+  "attack": 4,
+  "defense": 5,
+  "vision_range": "adjacent_8",
+  "attack_range": "adjacent_8",
+  "abilities": [
+    "守护"
+  ],
+  "rarity": "common",
+  "effect_text": "造成伤害时随机获得 +1/+1 或 -1/-2。",
+  "triggers": {
+    "on_damage_dealt": {
+      "actions": [
+        {
+          "op": "random",
+          "branches": [
+            {
+              "weight": 1,
+              "actions": [
+                {
+                  "op": "buff",
+                  "scope": "self",
+                  "atk": 1,
+                  "def": 1
+                }
+              ]
+            },
+            {
+              "weight": 1,
+              "actions": [
+                {
+                  "op": "buff",
+                  "scope": "self",
+                  "atk": -1,
+                  "def": -2
+                }
+              ]
+            }
+          ],
+          "salt": "zheffre"
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "flavor_text": "1914.fun 社区卡牌"
+}

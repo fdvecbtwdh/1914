@@ -1,0 +1,29 @@
+{
+  "id": "charron_1906",
+  "name": "Charron 1906 型轮式装甲车",
+  "nation": "french_empire",
+  "unit_class": "tank",
+  "cost_g": 36,
+  "cost_z": 3,
+  "attack": 2,
+  "defense": 3,
+  "vision_range": "adjacent_8",
+  "attack_range": "adjacent_8",
+  "abilities": [
+    "响应"
+  ],
+  "rarity": "common",
+  "effect_text": "部署时压制 1 个敌方单位。",
+  "triggers": {
+    "on_deploy": {
+      "actions": [
+        {
+          "op": "suppress",
+          "count": 1
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "flavor_text": "1914.fun 社区卡牌"
+}

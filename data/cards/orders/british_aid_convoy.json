@@ -1,0 +1,41 @@
+{
+  "id": "british_aid_convoy",
+  "name": "大英援俄装甲力量",
+  "type": "order",
+  "nation": "british_empire",
+  "cost_g": 0,
+  "cost_k": 9,
+  "rarity": "silver",
+  "effect_text": "将 6 张「劳斯莱斯装甲车 1914 型」加入底线、手牌与商店，使其全卡数值 -1。",
+  "triggers": {
+    "on_play": {
+      "actions": [
+        {
+          "op": "modify_card",
+          "card_id": "rolls_royce_1914",
+          "atk": -1,
+          "def": -1
+        },
+        {
+          "op": "spawn",
+          "card_id": "rolls_royce_1914",
+          "count": 6,
+          "where": "rear_line"
+        },
+        {
+          "op": "add_to_hand",
+          "card_id": "rolls_royce_1914",
+          "count": 6
+        },
+        {
+          "op": "spawn",
+          "card_id": "rolls_royce_1914",
+          "count": 6,
+          "where": "shop"
+        }
+      ]
+    }
+  },
+  "abilities": [],
+  "flavor_text": "1914.fun 社区卡牌"
+}

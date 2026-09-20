@@ -4,6 +4,7 @@ class_name HandManager
 ## 手牌/购买区/资源 UI — 从 BattleState 读取，响应 TurnManager 信号
 
 signal card_purchased(card_id: String)
+signal order_played(card_id: String)
 signal end_turn_pressed()
 signal skip_phase_pressed()
 
@@ -286,24 +287,56 @@ func _render_hand(state: BattleState) -> void:
 			continue
 		idx += 1
 		var btn := Button.new()
-		btn.text = "[%d] %s (Z:%d) %d/%d" % [idx, card_data.card_name, card_data.cost_z, card_data.attack, card_data.defense]
+		var is_order: bool = card_data.type == "order"
+		if is_order:
+			# 6A.1 指令卡：K 费标识，行动阶段 K 足够即可使用
+			btn.text = "[%d] ↯ %s (K:%d)" % [idx, card_data.card_name, card_data.cost_k]
+			var can_play: bool = state.phase == "action" and state.active_player_index == _ui_player_idx(state) and state.players[_ui_player_idx(state)].resources["K"] >= card_data.cost_k
+			if not can_play:
+				btn.disabled = true
+				btn.tooltip_text = "行动阶段且指挥点 K 足够时才能使用"
+			else:
+				btn.tooltip_text = str(card_data.effect_text)
+			btn.pressed.connect(_make_order_handler(card_id))
+		else:
+			btn.text = "[%d] %s (Z:%d) %d/%d" % [idx, card_data.card_name, card_data.cost_z, card_data.attack, card_data.defense]
+			# 4.3 部署就绪标识：部署阶段基于引擎判定显示可/不可部署及原因
+			if in_deploy_phase:
+				var verdict: Dictionary = GameLogic.can_deploy(state, state.active_player_index, card_id)
+				if bool(verdict.get("ok", false)):
+					btn.text = "✓ " + btn.text
+					btn.tooltip_text = "本回合可以部署"
+				else:
+					btn.text = "✗ " + btn.text
+					btn.disabled = true
+					btn.tooltip_text = str(verdict.get("reason", "本回合不能部署"))
+			btn.pressed.connect(_make_deploy_handler(card_id))
 		btn.position = Vector2(px, py)
 		btn.size.x = 190.0
-		# 4.3 部署就绪标识：部署阶段基于引擎判定显示可/不可部署及原因
-		if in_deploy_phase:
-			var verdict: Dictionary = GameLogic.can_deploy(state, state.active_player_index, card_id)
-			if bool(verdict.get("ok", false)):
-				btn.text = "✓ " + btn.text
-				btn.tooltip_text = "本回合可以部署"
-			else:
-				btn.text = "✗ " + btn.text
-				btn.disabled = true
-				btn.tooltip_text = str(verdict.get("reason", "本回合不能部署"))
-		btn.pressed.connect(_make_deploy_handler(card_id))
 		add_child(btn)
 		_hand_buttons[card_id] = btn
 		_hand_order.append(card_id)
 		py += CARD_BTN_HEIGHT + 4.0
+
+
+func _ui_player_idx(state: BattleState) -> int:
+	if NetworkManager.is_network_game:
+		return NetworkManager.local_player_idx
+	if GameManager.ai_player_idx >= 0:
+		return 1 - GameManager.ai_player_idx
+	return state.active_player_index
+
+
+func _make_order_handler(card_id: String) -> Callable:
+	return func():
+		var state := turn_manager.get_state()
+		if state == null or state.phase != "action":
+			return
+		var player = state.players[_ui_player_idx(state)]
+		var card_data: Resource = CardDataLoader.cards.get(card_id)
+		if card_data == null or player.resources["K"] < card_data.cost_k:
+			return
+		order_played.emit(card_id)
 
 
 func _get_panel_top_y() -> float:

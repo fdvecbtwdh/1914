@@ -51,8 +51,7 @@ static func purchase_card(state: BattleState, player_idx: int, card_id: String) 
 	var card_data = CardDataLoader.cards.get(card_id)
 	if card_data == null:
 		return null
-	if card_data.type != "unit":
-		return null  # 指令卡（order）走指令区流程，当前阶段未实现
+	# 6A：指令卡（order）与单位同样经购买进入手牌（G0 指令免费）；K 在使用时支付
 	if player.resources["G"] < card_data.cost_g:
 		return null  # G 不够
 	# 6.2 稀有度购买上限：与抽取数量无关
@@ -121,9 +120,9 @@ static func deploy_unit(state: BattleState, player_idx: int, card_id: String, ro
 	var unit: BattleState.UnitData = BattleState.UnitData.new()
 	unit.card_id = card_id
 	unit.owner_index = player_idx
-	unit.attack = card_data.attack
-	unit.defense = card_data.defense
-	unit.max_defense = card_data.defense
+	unit.attack = GameEffects.template_atk(new_state, card_id)   # 6A.4 应用 card_mods
+	unit.defense = GameEffects.template_def(new_state, card_id)
+	unit.max_defense = unit.defense
 	unit.abilities = card_data.abilities.duplicate()
 	unit.deployed_this_turn = true
 	# Phase 3: 初始化扩展字段
@@ -131,6 +130,44 @@ static func deploy_unit(state: BattleState, player_idx: int, card_id: String, ro
 	new_state.board.set_unit(row, col, unit, layer)
 	_log_action(new_state, {"type": "deploy", "player": player_idx, "card_id": card_id, "row": row, "col": col})
 	_refresh_guards(new_state)   # 新单位入场后重算全图守护关系
+	# 6A.2 触发：自身 on_deploy + 全场其他单位的 on_friendly_deploy
+	GameEffects.fire_unit_trigger(new_state, unit, row, col, layer, "on_deploy")
+	GameEffects.fire_others_trigger(new_state, unit, row, "on_friendly_deploy")
+	return new_state
+
+
+## 6A.1 使用指令卡：行动阶段、支付 K、结算 on_play 效果、进入弃牌区
+static func play_order(state: BattleState, player_idx: int, card_id: String, target_row: int = -1, target_col: int = -1) -> BattleState:
+	var new_state: BattleState = state.duplicate(true)
+	var player = new_state.players[player_idx]
+	if not player.hand.has(card_id):
+		return null
+	if new_state.phase != "action":
+		return null
+	var card_data: Resource = CardDataLoader.cards.get(card_id)
+	if card_data == null or card_data.type != "order":
+		return null
+	if player.resources["K"] < card_data.cost_k:
+		return null  # K 不足
+	var trig: Dictionary = card_data.triggers.get("on_play", {})
+	var actions: Array = trig.get("actions", [])
+	# 目标校验：需要目标的指令必须有合法目标格（任意单位）
+	if bool(trig.get("needs_target", false)):
+		var t: BattleState.UnitData = new_state.board.get_unit(target_row, target_col)
+		if t == null:
+			t = new_state.board.get_unit(target_row, target_col, "air")
+		if t == null:
+			return null  # 无合法目标
+	player.resources["K"] -= card_data.cost_k
+	player.hand.erase(card_id)
+	player.discard.append(card_id)
+	var ctx := {"owner_idx": player_idx, "target_row": target_row, "target_col": target_col}
+	GameEffects.run_effects(new_state, actions, ctx)
+	_log_action(new_state, {"type": "play_order", "player": player_idx, "card_id": card_id})
+	_refresh_guards(new_state)
+	# 强制结束回合类指令（如「保卫领空」）
+	if bool(trig.get("end_turn_after", false)):
+		new_state = end_turn(new_state)
 	return new_state
 
 
@@ -147,6 +184,9 @@ static func move_unit(state: BattleState, player_idx: int, from_row: int, from_c
 		return null
 	# 后退过的单位本回合行动已耗尽
 	if unit.retreated:
+		return null
+	# 6A 被压制：无法移动
+	if unit.suppressed:
 		return null
 
 	# 检查移动次数
@@ -198,6 +238,9 @@ static func move_unit(state: BattleState, player_idx: int, from_row: int, from_c
 		unit.retreated = true
 	_log_action(new_state, {"type": "move", "player": player_idx, "retreat": is_retreat, "from": [from_row, from_col], "to": [to_row, to_col]})
 	_refresh_guards(new_state)   # 位置变化后重算全图守护关系
+	# 6A.2 on_enter_line：单位进入一条新的战线
+	if to_row != from_row:
+		GameEffects.fire_unit_trigger(new_state, unit, to_row, to_col, layer, "on_enter_line")
 	return new_state
 
 static func attack_unit(state: BattleState, player_idx: int, from_row: int, from_col: int, target_row: int, target_col: int) -> BattleState:
@@ -223,6 +266,10 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 		return null
 	if attacker.retreated:
 		return null  # 后退消耗全部行动
+	if attacker.suppressed:
+		return null  # 6A 被压制：无法攻击
+	if _has_passive(attacker, "cannot_attack"):
+		return null  # 无法攻击
 	# 射程检查（简化：相邻四格 + 火炮全图）
 	if not _in_attack_range(attacker, from_row, from_col, target_row, target_col):
 		return null
@@ -269,14 +316,24 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 		var guard_pos: Vector2i = defender.guarded_by
 		var guard_unit: BattleState.UnitData = new_state.board.get_unit(guard_pos.x, guard_pos.y)
 		if guard_unit != null and guard_unit.owner_index == defender.owner_index:
+			# 6A.2 触发：敌方指向受守护的友方（Ehrhardt EV/4 的经济奖励）
+			GameEffects.fire_unit_trigger(new_state, guard_unit, guard_pos.x, guard_pos.y, "air" if guard_unit.is_air else "ground", "on_guarded_ally_attacked",
+				{"target_unit": defender, "target_row": actual_row, "target_col": actual_col})
 			defender = guard_unit  # 攻击目标改为守护单位
 			actual_row = guard_pos.x
 			actual_col = guard_pos.y
 
 	# 伤害计算
 	var damage: int = attacker.attack
+	# 6A 被动：无视工事（大贝莎/柯斯达）；对被压制单位伤害加成（Charron G10 M）
+	var ignore_fort := _has_passive(attacker, "ignore_fort")
+	var bonus_vs_suppressed := _passive_number(attacker, "damage_bonus_vs_suppressed")
+	if defender.suppressed and bonus_vs_suppressed > 0:
+		damage += bonus_vs_suppressed
 	# Phase 3: 坚守减伤（含 5.4 工事为同阵线陆军提供的坚守）
-	var effective_firm: int = max(defender.firm_level, _fort_firm_bonus(new_state, actual_row, defender.owner_index))
+	var effective_firm: int = defender.firm_level
+	if not ignore_fort:
+		effective_firm = max(effective_firm, _fort_firm_bonus(new_state, actual_row, defender.owner_index))
 	if effective_firm > 0:
 		damage = max(1, damage - effective_firm)
 	# 施加伤害
@@ -284,6 +341,9 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 
 	# 战斗记录
 	_log_action(new_state, {"type": "attack", "player": player_idx, "from": [from_row, from_col], "to": [actual_row, actual_col], "damage": damage})
+	# 6A.2 触发：造成伤害后（once_per_turn / condition 由触发数据声明）
+	GameEffects.fire_unit_trigger(new_state, attacker, from_row, from_col, atk_layer, "on_damage_dealt",
+		{"target_unit": defender, "target_row": actual_row, "target_col": actual_col, "damage": damage})
 
 	# 是否消灭
 	if defender.defense <= 0:
@@ -297,6 +357,7 @@ static func attack_unit(state: BattleState, player_idx: int, from_row: int, from
 		player.resources["G"] += reward_g
 		new_state.board.set_unit(actual_row, actual_col, null, "air" if defender.is_air else "ground")
 		_log_action(new_state, {"type": "destroy", "player": player_idx, "card_id": defender.card_id, "reward_g": reward_g})
+		GameEffects.fire_unit_trigger(new_state, defender, actual_row, actual_col, "air" if defender.is_air else "ground", "on_death")
 	else:
 		# 反击（攻击者未被消灭时）
 		_counter_attack(attacker, defender, from_row, from_col, actual_row, actual_col, new_state)
@@ -334,9 +395,34 @@ static func start_turn(state: BattleState) -> BattleState:
 	player.purchases_this_turn = {"common": 0, "silver": 0, "gold": 0}
 	_apply_supply(new_state, new_state.active_player_index)
 	_apply_rear_repair(new_state, new_state.active_player_index)
+	_apply_repair(new_state, new_state.active_player_index)
+	_fire_turn_triggers(new_state, new_state.active_player_index)
 	_update_stealth_reveal(new_state)
 	new_state.phase = "purchase"
 	return new_state
+
+
+## 2.1 修复 N：友方回合开始时恢复 N 点防御力（不超上限）
+static func _apply_repair(state: BattleState, player_idx: int) -> void:
+	for layer in ["ground", "air"]:
+		for r in range(state.board.rows):
+			for c in range(state.board.cols):
+				var u: BattleState.UnitData = state.board.get_unit(r, c, layer)
+				if u == null or u.owner_index != player_idx:
+					continue
+				var repair := _parse_ability_level(u.abilities, "修复")
+				if repair > 0 and u.defense < u.max_defense:
+					u.defense = min(u.max_defense, u.defense + repair)
+
+
+## 6A.2 on_turn_start 触发（拥有者回合开始）
+static func _fire_turn_triggers(state: BattleState, player_idx: int) -> void:
+	for layer in ["ground", "air"]:
+		for r in range(state.board.rows):
+			for c in range(state.board.cols):
+				var u: BattleState.UnitData = state.board.get_unit(r, c, layer)
+				if u != null and u.owner_index == player_idx:
+					GameEffects.fire_unit_trigger(state, u, r, c, layer, "on_turn_start")
 
 
 static func end_turn(state: BattleState) -> BattleState:
@@ -344,6 +430,8 @@ static func end_turn(state: BattleState) -> BattleState:
 	# 清空 K/Z
 	new_state.players[new_state.active_player_index].resources["K"] = 0
 	new_state.players[new_state.active_player_index].resources["Z"] = 0
+	# 6A 压制解除：拥有者回合结束时解除其单位的压制
+	_clear_suppressed(new_state, new_state.active_player_index)
 	# 3A.1 巡逻确认：结束行动一方的回合结束时，本回合未攻击过的战斗机自动进入巡逻
 	_confirm_patrol(new_state, new_state.active_player_index)
 	# 切换玩家
@@ -454,6 +542,7 @@ static func _air_strike(state: BattleState, atk_unit: BattleState.UnitData, atk_
 	if def_unit.defense <= 0:
 		state.board.set_unit(def_row, def_col, null, "air")
 		_log_action(state, {"type": "destroy", "player": atk_unit.owner_index, "card_id": def_unit.card_id, "reward_g": 0})
+		GameEffects.fire_unit_trigger(state, def_unit, def_row, def_col, "air", "on_death")
 		return  # 目标已毁，不存在反击
 	if no_counter:
 		return  # 自动反击不受反击伤害
@@ -531,6 +620,17 @@ static func build_fort(state: BattleState, player_idx: int, from_row: int, from_
 
 #endregion
 
+## 6A 效果销毁原语：移除单位 + 亡计触发（不给击杀奖励——奖励仅限攻击击杀）
+static func destroy_unit(state: BattleState, row: int, col: int, layer: String, killer_idx: int) -> void:
+	var u: BattleState.UnitData = state.board.get_unit(row, col, layer)
+	if u == null:
+		return
+	state.board.set_unit(row, col, null, layer)
+	_log_action(state, {"type": "destroy", "player": killer_idx, "card_id": u.card_id, "reward_g": 0})
+	GameEffects.fire_unit_trigger(state, u, row, col, layer, "on_death")
+	_refresh_guards(state)
+
+
 ## ── 合法行动枚举（UI 与 AI 共用；AI 预演验证依赖这些枚举）──
 
 ## 指定单位的所有合法移动目标（含 1.3 后退格；1.2 图层内移动）
@@ -603,8 +703,60 @@ static func get_valid_attack_targets(state: BattleState, player_idx: int, from_r
 					continue
 			if target.stealthed and not target.revealed:
 				continue
+			# 被动：无法被某类单位攻击（如 "cannot_be_attacked_by:fighter"）
+			if _blocked_by_passive(unit, target):
+				continue
+			# 6A 嘲讽（taunt）：敌方存在嘲讽单位时只能攻击嘲讽单位
+			if not _has_passive(target, "taunt") and _enemy_has_taunt(state, player_idx, target.owner_index):
+				continue
 			targets.append(Vector2i(row, col))
 	return targets
+
+
+## 6A 嘲讽检查：目标阵营是否存在带 taunt 被动的存活单位
+static func _enemy_has_taunt(state: BattleState, player_idx: int, taunt_owner: int) -> bool:
+	for layer in ["ground", "air"]:
+		for r in range(state.board.rows):
+			for c in range(state.board.cols):
+				var u: BattleState.UnitData = state.board.get_unit(r, c, layer)
+				if u != null and u.owner_index == taunt_owner and _has_passive(u, "taunt"):
+					return true
+	return false
+
+
+## 6A 被动检查：目标是否对攻击者免疫（passives: cannot_be_attacked_by:<unit_class>）
+static func _blocked_by_passive(attacker: BattleState.UnitData, target: BattleState.UnitData) -> bool:
+	var card_data: Resource = CardDataLoader.cards.get(target.card_id)
+	if card_data == null:
+		return false
+	var atk_cls := _unit_class_of(attacker)
+	for passive in card_data.passives:
+		var pv := str(passive)
+		if pv.begins_with("cannot_be_attacked_by:"):
+			var banned := pv.substr("cannot_be_attacked_by:".length())
+			if banned == atk_cls or (banned == "air" and _is_air_unit(atk_cls)) or (banned == "ground" and not _is_air_unit(atk_cls)):
+				return true
+	return false
+
+
+## 6A 被动检查
+static func _has_passive(unit: BattleState.UnitData, passive: String) -> bool:
+	var card_data: Resource = CardDataLoader.cards.get(unit.card_id)
+	return card_data != null and passive in card_data.passives
+
+
+## 6A 数值型被动（如 "damage_bonus_vs_suppressed:3"）
+static func _passive_number(unit: BattleState.UnitData, prefix: String) -> int:
+	var card_data: Resource = CardDataLoader.cards.get(unit.card_id)
+	if card_data == null:
+		return 0
+	for passive in card_data.passives:
+		var pv := str(passive)
+		if pv.begins_with(prefix + ":"):
+			var suffix := pv.substr(prefix.length() + 1)
+			if suffix.is_valid_int():
+				return suffix.to_int()
+	return 0
 
 #region 战线占领度（docs/game-mechanics.md 第 5 节）
 
@@ -617,6 +769,7 @@ const FRONT_CONTROL_WEIGHTS := {"cavalry": 25, "infantry": 50, "tank": 100}
 static func _update_front_control(state: BattleState) -> void:
 	while state.front_control.size() < state.board.rows:
 		state.front_control.append(0)  # 兜底：未经 setup() 的 state
+	var old_control := state.front_control.duplicate()
 	for r in range(state.board.rows):
 		var p0_score: int = 0
 		var p1_score: int = 0
@@ -638,6 +791,38 @@ static func _update_front_control(state: BattleState) -> void:
 		elif p1_score > 0:
 			state.front_control[r] = clampi(state.front_control[r] - p1_score, -100, 100)
 		# 均无贡献单位 → 保持不变（已占领战线维持占领）
+	# 6A.2 on_line_lost：战线易主（此前某方 100 占领 → 现在敌方 100）时通知该线单位
+	for r in range(state.board.rows):
+		if r >= old_control.size():
+			break
+		var was_ours_p0: bool = int(old_control[r]) == 100
+		var was_ours_p1: bool = int(old_control[r]) == -100
+		var now_p0: bool = state.front_control[r] == 100
+		var now_p1: bool = state.front_control[r] == -100
+		if was_ours_p0 and now_p1:
+			_fire_line_lost(state, 0, r)
+		elif was_ours_p1 and now_p0:
+			_fire_line_lost(state, 1, r)
+
+
+static func _fire_line_lost(state: BattleState, loser_idx: int, row: int) -> void:
+	for c in range(state.board.cols):
+		var u: BattleState.UnitData = state.board.get_unit(row, c, "ground")
+		if u != null and u.owner_index == loser_idx:
+			GameEffects.fire_unit_trigger(state, u, row, c, "ground", "on_line_lost")
+		var ua: BattleState.UnitData = state.board.get_unit(row, c, "air")
+		if ua != null and ua.owner_index == loser_idx:
+			GameEffects.fire_unit_trigger(state, ua, row, c, "air", "on_line_lost")
+
+
+## 6A 压制解除
+static func _clear_suppressed(state: BattleState, player_idx: int) -> void:
+	for layer in ["ground", "air"]:
+		for r in range(state.board.rows):
+			for c in range(state.board.cols):
+				var u: BattleState.UnitData = state.board.get_unit(r, c, layer)
+				if u != null and u.owner_index == player_idx:
+					u.suppressed = false
 
 
 static func _front_weight(card_id: String) -> int:
@@ -799,6 +984,7 @@ static func _counter_attack(attacker: BattleState.UnitData, defender: BattleStat
 	if attacker.defense <= 0:
 		state.board.set_unit(atk_row, atk_col, null, "air" if attacker.is_air else "ground")
 		_log_action(state, {"type": "destroy", "player": defender.owner_index, "card_id": attacker.card_id, "reward_g": 0})
+		GameEffects.fire_unit_trigger(state, attacker, atk_row, atk_col, "air" if attacker.is_air else "ground", "on_death")
 
 
 ## 从 abilities 数组中解析带等级的词条

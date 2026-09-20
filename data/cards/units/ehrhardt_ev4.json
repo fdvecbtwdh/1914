@@ -1,0 +1,32 @@
+{
+  "id": "ehrhardt_ev4",
+  "name": "Ehrhardt EV/4 型装甲车",
+  "nation": "german_empire",
+  "unit_class": "tank",
+  "cost_g": 36,
+  "cost_z": 3,
+  "attack": 3,
+  "defense": 4,
+  "vision_range": "adjacent_8",
+  "attack_range": "adjacent_8",
+  "abilities": [
+    "守护",
+    "响应",
+    "修复2"
+  ],
+  "rarity": "silver",
+  "effect_text": "敌方指向受守护的友方时，友方获得 48 点生产费用。",
+  "triggers": {
+    "on_guarded_ally_attacked": {
+      "actions": [
+        {
+          "op": "economy",
+          "who": "self",
+          "amount": 48
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "flavor_text": "1914.fun 社区卡牌"
+}

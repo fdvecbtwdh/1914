@@ -1,0 +1,30 @@
+{
+  "id": "infantry_regiment_8",
+  "name": "第 8 步兵团",
+  "nation": "german_empire",
+  "unit_class": "infantry",
+  "cost_g": 60,
+  "cost_z": 3,
+  "attack": 3,
+  "defense": 4,
+  "vision_range": "adjacent_4",
+  "attack_range": "adjacent_8",
+  "abilities": [
+    "坚守",
+    "守护"
+  ],
+  "rarity": "common",
+  "effect_text": "友方回合开始时，获得 3 点防御力。",
+  "triggers": {
+    "on_turn_start": {
+      "actions": [
+        {
+          "op": "buff",
+          "scope": "self",
+          "atk": 0,
+          "def": 3
+        }
+      ]
+    }
+  }
+}

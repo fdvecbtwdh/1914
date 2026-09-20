@@ -1,0 +1,28 @@
+{
+  "id": "zeppelin_l4",
+  "name": "齐柏林 L4 飞艇（LZ 27）",
+  "nation": "german_empire",
+  "unit_class": "bomber",
+  "cost_g": 52,
+  "cost_z": 1,
+  "attack": 1,
+  "defense": 2,
+  "vision_range": "front_3x2",
+  "attack_range": "column_and_neighbors",
+  "rarity": "common",
+  "effect_text": "亡计：商店中的本单位转化为「齐柏林 L11 飞艇（LZ 48）」。",
+  "triggers": {
+    "on_death": {
+      "actions": [
+        {
+          "op": "shop_transform",
+          "from_card": "zeppelin_l4",
+          "to_card": "zeppelin_l11"
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "abilities": [],
+  "flavor_text": "1914.fun 社区卡牌"
+}

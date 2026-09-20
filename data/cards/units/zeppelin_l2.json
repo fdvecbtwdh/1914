@@ -1,0 +1,29 @@
+{
+  "id": "zeppelin_l2",
+  "name": "齐柏林 L2 飞艇（LZ 18）",
+  "nation": "german_empire",
+  "unit_class": "bomber",
+  "cost_g": 100,
+  "cost_z": 2,
+  "attack": 1,
+  "defense": 3,
+  "vision_range": "front_3x2",
+  "attack_range": "column_and_neighbors",
+  "rarity": "common",
+  "effect_text": "亡计：生产一张「齐柏林飞艇」。",
+  "triggers": {
+    "on_death": {
+      "actions": [
+        {
+          "op": "spawn",
+          "card_id": "zeppelin_proto",
+          "count": 1,
+          "where": "shop"
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "abilities": [],
+  "flavor_text": "1914.fun 社区卡牌"
+}

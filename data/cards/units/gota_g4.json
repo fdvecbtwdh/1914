@@ -1,0 +1,31 @@
+{
+  "id": "gota_g4",
+  "name": "戈塔 G.IV",
+  "nation": "german_empire",
+  "unit_class": "bomber",
+  "cost_g": 112,
+  "cost_z": 5,
+  "attack": 4,
+  "defense": 4,
+  "vision_range": "adjacent_8",
+  "attack_range": "adjacent_8",
+  "abilities": [
+    "响应",
+    "防空"
+  ],
+  "rarity": "gold",
+  "effect_text": "本单位攻击时，敌方失去 44 点经济。",
+  "triggers": {
+    "on_damage_dealt": {
+      "actions": [
+        {
+          "op": "economy",
+          "who": "enemy",
+          "amount": -44
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "flavor_text": "1914.fun 社区卡牌"
+}

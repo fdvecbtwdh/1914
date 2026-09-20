@@ -1,0 +1,32 @@
+{
+  "id": "zeppelin_lz3",
+  "name": "齐柏林 LZ 3 飞艇（Z1）",
+  "nation": "german_empire",
+  "unit_class": "bomber",
+  "cost_g": 124,
+  "cost_z": 3,
+  "attack": 2,
+  "defense": 3,
+  "vision_range": "front_3x2",
+  "attack_range": "column_and_neighbors",
+  "rarity": "gold",
+  "effect_text": "商店中的德国轰炸机获得 +1/+1。",
+  "triggers": {
+    "on_deploy": {
+      "actions": [
+        {
+          "op": "shop_buff",
+          "filter": {
+            "nation": "german_empire",
+            "unit_class": "bomber"
+          },
+          "atk": 1,
+          "def": 1
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "abilities": [],
+  "flavor_text": "1914.fun 社区卡牌"
+}

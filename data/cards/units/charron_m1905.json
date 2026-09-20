@@ -1,0 +1,34 @@
+{
+  "id": "charron_m1905",
+  "name": "Charron M1905 装甲车",
+  "nation": "french_empire",
+  "unit_class": "tank",
+  "cost_g": 30,
+  "cost_z": 2,
+  "attack": 1,
+  "defense": 2,
+  "vision_range": "adjacent_8",
+  "attack_range": "adjacent_8",
+  "rarity": "common",
+  "effect_text": "部署：开发一张「Charron G10 M 装甲车」，使其全卡数值 -1。",
+  "triggers": {
+    "on_deploy": {
+      "actions": [
+        {
+          "op": "add_to_hand",
+          "card_id": "charron_g10_m",
+          "count": 1
+        },
+        {
+          "op": "modify_card",
+          "card_id": "charron_g10_m",
+          "atk": -1,
+          "def": -1
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "abilities": [],
+  "flavor_text": "1914.fun 社区卡牌"
+}

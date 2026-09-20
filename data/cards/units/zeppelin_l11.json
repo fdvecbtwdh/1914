@@ -1,0 +1,31 @@
+{
+  "id": "zeppelin_l11",
+  "name": "齐柏林 L11 飞艇（LZ 48）",
+  "nation": "german_empire",
+  "unit_class": "bomber",
+  "cost_g": 196,
+  "cost_z": 4,
+  "attack": 3,
+  "defense": 4,
+  "vision_range": "front_3x2",
+  "attack_range": "column_and_neighbors",
+  "rarity": "silver",
+  "effect_text": "部署：场上每有一个友方齐柏林，敌方失去 25 经济（上限 8 次）。",
+  "triggers": {
+    "on_deploy": {
+      "actions": [
+        {
+          "op": "economy_per_friendly",
+          "filter": {
+            "card_id_prefix": "zeppelin"
+          },
+          "per": 25,
+          "cap": 8
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "abilities": [],
+  "flavor_text": "1914.fun 社区卡牌"
+}

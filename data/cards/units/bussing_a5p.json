@@ -1,0 +1,37 @@
+{
+  "id": "bussing_a5p",
+  "name": "布辛 A5P 机枪装甲车",
+  "nation": "german_empire",
+  "unit_class": "tank",
+  "cost_g": 32,
+  "cost_z": 3,
+  "attack": 2,
+  "defense": 5,
+  "vision_range": "adjacent_8",
+  "attack_range": "adjacent_8",
+  "abilities": [
+    "守护",
+    "响应",
+    "修复2"
+  ],
+  "rarity": "silver",
+  "effect_text": "亡计：转化为德国步兵并获得 +2/+1。",
+  "triggers": {
+    "on_death": {
+      "actions": [
+        {
+          "op": "transform",
+          "to": "infantry_01"
+        },
+        {
+          "op": "buff",
+          "scope": "self",
+          "atk": 2,
+          "def": 1
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "flavor_text": "1914.fun 社区卡牌"
+}

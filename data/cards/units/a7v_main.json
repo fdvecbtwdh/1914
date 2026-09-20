@@ -1,0 +1,29 @@
+{
+  "id": "a7v_main",
+  "name": "A7V-主战型",
+  "nation": "german_empire",
+  "unit_class": "tank",
+  "cost_g": 184,
+  "cost_z": 6,
+  "attack": 5,
+  "defense": 7,
+  "vision_range": "adjacent_8",
+  "attack_range": "adjacent_8",
+  "abilities": [
+    "坚守2",
+    "冲锋"
+  ],
+  "rarity": "silver",
+  "effect_text": "对敌方单位造成伤害时，随机使一个敌方单位撤退。",
+  "triggers": {
+    "on_damage_dealt": {
+      "actions": [
+        {
+          "op": "retreat_random"
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "flavor_text": "1914.fun 社区卡牌"
+}

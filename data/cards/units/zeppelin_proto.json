@@ -1,0 +1,17 @@
+{
+  "id": "zeppelin_proto",
+  "name": "齐柏林飞艇",
+  "nation": "german_empire",
+  "unit_class": "bomber",
+  "cost_g": 80,
+  "cost_z": 3,
+  "attack": 2,
+  "defense": 2,
+  "vision_range": "front_3x2",
+  "attack_range": "column_and_neighbors",
+  "rarity": "common",
+  "effect_text": "德意志飞艇部队的标准舰。",
+  "type": "unit",
+  "abilities": [],
+  "flavor_text": "1914.fun 社区卡牌"
+}

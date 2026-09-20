@@ -1,0 +1,33 @@
+{
+  "id": "zeppelin_l70",
+  "name": "齐柏林 L70 飞艇（LZ 112）",
+  "nation": "german_empire",
+  "unit_class": "bomber",
+  "cost_g": 244,
+  "cost_z": 10,
+  "attack": 5,
+  "defense": 5,
+  "vision_range": "global",
+  "attack_range": "global",
+  "passives": [
+    "cannot_be_attacked_by:fighter"
+  ],
+  "rarity": "gold",
+  "effect_text": "无法被战斗机攻击。友方失去战线时，压制该战线所有敌方单位并消灭本单位。",
+  "triggers": {
+    "on_line_lost": {
+      "actions": [
+        {
+          "op": "suppress",
+          "count": 9
+        },
+        {
+          "op": "destroy_self"
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "abilities": [],
+  "flavor_text": "1914.fun 社区卡牌"
+}

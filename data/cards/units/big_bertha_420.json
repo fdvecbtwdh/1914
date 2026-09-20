@@ -1,0 +1,23 @@
+{
+  "id": "big_bertha_420",
+  "name": "大贝莎 420mm 重型榴弹炮",
+  "nation": "german_empire",
+  "unit_class": "artillery",
+  "cost_g": 212,
+  "cost_z": 8,
+  "attack": 6,
+  "defense": 6,
+  "vision_range": "adjacent_8",
+  "attack_range": "global",
+  "abilities": [
+    "坚守2",
+    "响应"
+  ],
+  "passives": [
+    "ignore_fort"
+  ],
+  "rarity": "gold",
+  "effect_text": "无视「工事」。",
+  "type": "unit",
+  "flavor_text": "1914.fun 社区卡牌"
+}

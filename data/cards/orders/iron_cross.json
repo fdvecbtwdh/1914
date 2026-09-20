@@ -1,0 +1,17 @@
+{
+  "id": "iron_cross",
+  "name": "铁十字勋章",
+  "type": "order",
+  "nation": "german_empire",
+  "cost_g": 0,
+  "cost_k": 1,
+  "rarity": "common",
+  "effect_text": "荣誉勋章（配套卡牌）。",
+  "triggers": {
+    "on_play": {
+      "actions": []
+    }
+  },
+  "abilities": [],
+  "flavor_text": "1914.fun 社区卡牌"
+}

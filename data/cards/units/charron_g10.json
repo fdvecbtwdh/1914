@@ -1,0 +1,35 @@
+{
+  "id": "charron_g10",
+  "name": "Charron G10 装甲车",
+  "nation": "french_empire",
+  "unit_class": "tank",
+  "cost_g": 68,
+  "cost_z": 3,
+  "attack": 2,
+  "defense": 3,
+  "vision_range": "adjacent_8",
+  "attack_range": "adjacent_8",
+  "abilities": [
+    "突击",
+    "响应"
+  ],
+  "rarity": "silver",
+  "effect_text": "部署：友方场上所有具有「响应」的单位获得 +1/+2。",
+  "triggers": {
+    "on_deploy": {
+      "actions": [
+        {
+          "op": "buff",
+          "scope": "friendly_field",
+          "filter": {
+            "ability": "响应"
+          },
+          "atk": 1,
+          "def": 2
+        }
+      ]
+    }
+  },
+  "type": "unit",
+  "flavor_text": "1914.fun 社区卡牌"
+}
