@@ -192,6 +192,8 @@ func _render_units(state: BattleState) -> void:
 ## 4.3 单位状态标签：从单位状态数据读取（坚守/巡逻/守护/防空/补给/潜行/突击/冲锋/收缴/已行动）
 func _update_unit_tags(display: Control, unit: BattleState.UnitData) -> void:
 	var tags: Array[String] = []
+	if unit.suppressed:
+		tags.append("压")  # 6A 被压制：下个拥有者回合无法移动和攻击
 	if unit.firm_level > 0:
 		tags.append("坚%d" % unit.firm_level)
 	if unit.patrolling:
