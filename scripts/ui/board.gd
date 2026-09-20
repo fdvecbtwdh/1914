@@ -119,6 +119,8 @@ func _create_markers() -> void:
 func _viewer_idx(state: BattleState) -> int:
 	if NetworkManager.is_network_game:
 		return NetworkManager.local_player_idx
+	if GameManager.ai_player_idx >= 0:
+		return 1 - GameManager.ai_player_idx  # AI 对战：视角锁定玩家侧
 	return state.active_player_index
 
 
@@ -467,87 +469,12 @@ func _deselect_unit() -> void:
 
 
 func _get_valid_move_targets(from_row: int, from_col: int, state: BattleState) -> Array[Vector2i]:
-	var targets: Array[Vector2i] = []
-	# 1.2 图层：单位在自身图层内移动（含 1.3 后退：直退一格，消耗全部行动）
-	var layer := "air" if state.board.get_unit(from_row, from_col, "air") != null else "ground"
-	var unit := state.board.get_unit(from_row, from_col, layer)
-	if unit == null:
-		return targets
-	if unit.deployed_this_turn and not unit.abilities.has("突击"):
-		return targets  # 部署回合不能移动（突击例外）
-	if unit.retreated:
-		return targets
-	var player_idx := unit.owner_index
-	var directions: Array[int] = [-1, 0, 1]
-	for dr in directions:
-		for dc in directions:
-			if dr == 0 and dc == 0:
-				continue
-			var tr: int = from_row + dr
-			var tc: int = from_col + dc
-			if tr < 0 or tr >= state.board.rows or tc < 0 or tc >= state.board.cols:
-				continue
-			var is_retreat := (player_idx == 0 and tr < from_row) or (player_idx == 1 and tr > from_row)
-			if is_retreat:
-				# 后退：只能直退（不斜退）；己方后排行不能再退
-				if dc != 0:
-					continue
-				if (player_idx == 0 and from_row == 0) or (player_idx == 1 and from_row == state.board.rows - 1):
-					continue
-			if state.board.get_unit(tr, tc, layer) != null:
-				continue
-			targets.append(Vector2i(tr, tc))
-	return targets
+	return GameLogic.get_valid_move_targets(state, from_row, from_col)
 
 
 func _get_valid_attack_targets(from_row: int, from_col: int, state: BattleState) -> Array[Vector2i]:
-	var targets: Array[Vector2i] = []
-	var attacker_is_air := false
-	var unit := state.board.get_unit(from_row, from_col, "air")
-	if unit != null:
-		attacker_is_air = true
-	else:
-		unit = state.board.get_unit(from_row, from_col)
-	if unit == null:
-		return targets
-	# 已攻击的单位本回合不能再攻击
-	if unit.has_attacked:
-		return targets
-	# 后退消耗全部行动
-	if unit.retreated:
-		return targets
-	# Z 不足时任何攻击都无效
-	var player = state.players[unit.owner_index]
-	if player.resources["Z"] < 1:
-		return targets
-	for row in range(state.board.rows):
-		for col in range(state.board.cols):
-			# 1.2 目标定层：地面攻击者只能打地面层；空军攻击者优先空域层，其次地面层
-			var target := state.board.get_unit(row, col)
-			if target == null and attacker_is_air:
-				target = state.board.get_unit(row, col, "air")
-			if target == null:
-				continue
-			if target.owner_index == unit.owner_index:
-				continue
-			# 射程判定复用引擎实现（与攻击合法性完全一致）
-			if not GameLogic._in_attack_range(unit, from_row, from_col, row, col):
-				continue
-			# 陆军打不了空军；轰炸机只能打陆军
-			var attacker_card: Resource = CardDataLoader.cards.get(unit.card_id)
-			var defender_card: Resource = CardDataLoader.cards.get(target.card_id)
-			if attacker_card != null and defender_card != null:
-				var atk_is_air := GameLogic._is_air_unit(attacker_card.unit_class)
-				var def_is_air := GameLogic._is_air_unit(defender_card.unit_class)
-				if not atk_is_air and def_is_air:
-					continue
-				if attacker_card.unit_class == "bomber" and def_is_air:
-					continue
-			# 未揭示的潜行单位不可被作为目标
-			if target.stealthed and not target.revealed:
-				continue
-			targets.append(Vector2i(row, col))
-	return targets
+	var player_idx := _viewer_idx(state)
+	return GameLogic.get_valid_attack_targets(state, player_idx, from_row, from_col)
 
 
 ## ── 输入处理 ──

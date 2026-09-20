@@ -44,6 +44,20 @@ func _build_ui() -> void:
 	add_child(_box)
 
 	_add_button(_box, "本地对战（同屏）", func(): GameManager.start_local_game())
+
+	# ── 人机对战（三档难度） ──
+	var ai_label := Label.new()
+	ai_label.text = "— 人机对战 —"
+	ai_label.add_theme_font_size_override("font_size", 12)
+	ai_label.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+	_box.add_child(ai_label)
+	var ai_row := HBoxContainer.new()
+	ai_row.add_theme_constant_override("separation", 8)
+	_box.add_child(ai_row)
+	_add_button_to(ai_row, "简单", func(): GameManager.start_ai_game("easy"))
+	_add_button_to(ai_row, "普通", func(): GameManager.start_ai_game("normal"))
+	_add_button_to(ai_row, "困难", func(): GameManager.start_ai_game("hard"))
+
 	_add_button(_box, "创建局域网游戏", func(): GameManager.start_host_game())
 
 	var row := HBoxContainer.new()

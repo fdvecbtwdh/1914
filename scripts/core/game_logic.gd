@@ -531,6 +531,81 @@ static func build_fort(state: BattleState, player_idx: int, from_row: int, from_
 
 #endregion
 
+## ── 合法行动枚举（UI 与 AI 共用；AI 预演验证依赖这些枚举）──
+
+## 指定单位的所有合法移动目标（含 1.3 后退格；1.2 图层内移动）
+static func get_valid_move_targets(state: BattleState, from_row: int, from_col: int) -> Array[Vector2i]:
+	var targets: Array[Vector2i] = []
+	var layer := "air" if state.board.get_unit(from_row, from_col, "air") != null else "ground"
+	var unit: BattleState.UnitData = state.board.get_unit(from_row, from_col, layer)
+	if unit == null or unit.owner_index != state.active_player_index:
+		return targets
+	if unit.deployed_this_turn and not unit.abilities.has("突击"):
+		return targets
+	if unit.retreated or unit.move_count >= unit.move_limit:
+		return targets
+	if unit.move_limit <= 1 and not unit.can_move_after_attack and unit.has_acted:
+		return targets
+	var player_idx := unit.owner_index
+	for dr in [-1, 0, 1]:
+		for dc in [-1, 0, 1]:
+			if dr == 0 and dc == 0:
+				continue
+			var tr: int = from_row + dr
+			var tc: int = from_col + dc
+			if tr < 0 or tr >= state.board.rows or tc < 0 or tc >= state.board.cols:
+				continue
+			var is_retreat := (player_idx == 0 and tr < from_row) or (player_idx == 1 and tr > from_row)
+			if is_retreat:
+				if dc != 0:
+					continue
+				if (player_idx == 0 and from_row == 0) or (player_idx == 1 and from_row == state.board.rows - 1):
+					continue
+			if state.board.get_unit(tr, tc, layer) != null:
+				continue
+			targets.append(Vector2i(tr, tc))
+	return targets
+
+
+## 指定单位的所有合法攻击目标（1.2 图层定层；不含迷雾过滤——调用方决定是否过滤）
+static func get_valid_attack_targets(state: BattleState, player_idx: int, from_row: int, from_col: int) -> Array[Vector2i]:
+	var targets: Array[Vector2i] = []
+	var atk_layer := "air" if state.board.get_unit(from_row, from_col, "air") != null else "ground"
+	var unit: BattleState.UnitData = state.board.get_unit(from_row, from_col, atk_layer)
+	if unit == null or unit.owner_index != player_idx:
+		return targets
+	if unit.has_attacked or unit.retreated:
+		return targets
+	if unit.move_limit <= 1 and not unit.can_move_after_attack and unit.has_acted:
+		return targets
+	var player = state.players[player_idx]
+	if player.resources["Z"] < 1:
+		return targets
+	var attacker_card: Resource = CardDataLoader.cards.get(unit.card_id)
+	var attacker_is_air := _unit_class_of(unit) == "fighter" or _unit_class_of(unit) == "bomber"
+	for row in range(state.board.rows):
+		for col in range(state.board.cols):
+			var target: BattleState.UnitData = state.board.get_unit(row, col)
+			if target == null and attacker_is_air:
+				target = state.board.get_unit(row, col, "air")
+			if target == null:
+				continue
+			if target.owner_index == player_idx:
+				continue
+			if not _in_attack_range(unit, from_row, from_col, row, col):
+				continue
+			var defender_card: Resource = CardDataLoader.cards.get(target.card_id)
+			if attacker_card != null and defender_card != null:
+				var def_is_air := _is_air_unit(defender_card.unit_class)
+				if not attacker_is_air and def_is_air:
+					continue
+				if attacker_card.unit_class == "bomber" and def_is_air:
+					continue
+			if target.stealthed and not target.revealed:
+				continue
+			targets.append(Vector2i(row, col))
+	return targets
+
 #region 战线占领度（docs/game-mechanics.md 第 5 节）
 
 ## 占领贡献权重（仅三种陆军参与，其余兵种不贡献）

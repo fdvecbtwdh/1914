@@ -45,7 +45,7 @@ jobs:
       - name: Run test suites
         run: |
           set -e
-          for t in test_game_logic_scene test_turn_manager_scene task4_card_display_check task6_board_render_check task7_hand_manager_check test_network_scene test_interactions_scene test_edge_scene test_fog_front_scene test_replay_scene test_mechanics2_scene; do
+          for t in test_game_logic_scene test_turn_manager_scene task4_card_display_check task6_board_render_check task7_hand_manager_check test_network_scene test_interactions_scene test_edge_scene test_fog_front_scene test_replay_scene test_mechanics2_scene test_ai_scene; do
             echo "::group::run $t"
             ./godot-editor --headless --path . "res://tests/$t.tscn"
             echo "::endgroup::"

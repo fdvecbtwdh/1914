@@ -166,6 +166,13 @@ func _update_turn_ui(state: BattleState) -> void:
 		_banner.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
 		_set_controls_enabled(false)
 		return
+	if GameManager.ai_player_idx >= 0 and state.active_player_index == GameManager.ai_player_idx:
+		var diff_name: String = {"easy": "简单", "normal": "普通", "hard": "困难"}.get(GameManager.ai_difficulty, GameManager.ai_difficulty)
+		_banner.text = "AI 行动中（%s）…" % diff_name
+		_banner.add_theme_color_override("font_color", Color(0.95, 0.75, 0.4))
+		_end_btn.disabled = true
+		_skip_btn.disabled = true
+		return
 	var local := NetworkManager.local_player_idx if NetworkManager.is_network_game else state.active_player_index
 	if state.active_player_index == local:
 		_banner.text = "轮到你行动"

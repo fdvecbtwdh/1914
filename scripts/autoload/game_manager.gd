@@ -10,6 +10,10 @@ enum GameMode { LOCAL, HOST, CLIENT }
 var game_mode: GameMode = GameMode.LOCAL
 var turn_manager: TurnManager = null
 
+## AI 对战（docs/ai-design.md）：ai_player_idx >= 0 表示当前对局有 AI（执该侧）
+var ai_player_idx: int = -1
+var ai_difficulty: String = "normal"
+
 var _battle_ready := false       # 当前 battle 场景是否已接线
 var _applying_remote := false    # 正在应用远端指令（抑制转发回环）
 var _entering_battle := false    # 防抖：菜单快速连点时只进一次战斗场景
@@ -90,11 +94,21 @@ func _spawn_autopilot() -> void:
 # ═══════════════ 模式入口（主菜单调用） ═══════════════
 
 func start_local_game() -> void:
+	ai_player_idx = -1
+	game_mode = GameMode.LOCAL
+	_enter_battle()
+
+
+## 人机对战：玩家执 P1，AI 执 P2，走同一 submit_action 指令链
+func start_ai_game(difficulty: String) -> void:
+	ai_player_idx = 1
+	ai_difficulty = difficulty
 	game_mode = GameMode.LOCAL
 	_enter_battle()
 
 
 func start_host_game() -> void:
+	ai_player_idx = -1
 	game_mode = GameMode.HOST
 	var err: Error = NetworkManager.host_game()
 	if err != OK:
@@ -252,6 +266,13 @@ func _setup_battle() -> void:
 	NetworkManager.opponent_disconnected.connect(_on_opponent_left_fn)
 
 	_battle_ready = true
+
+	# AI 对战：挂 AIDirector 驱动 P2
+	if ai_player_idx >= 0:
+		var director := AIDirector.new()
+		director.name = "AIDirector"
+		scene.add_child(director)
+		director.setup(turn_manager, ai_player_idx, ai_difficulty)
 
 	# ── 启动对局 ──（中继房主在对手入房前保持等待，绝不能误开本地局）
 	if game_mode == GameMode.LOCAL:
