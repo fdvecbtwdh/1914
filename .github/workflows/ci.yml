@@ -51,6 +51,12 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Animation behaviour checks
+        run: |
+          echo "::group::run anim_verify"
+          ./godot-editor --headless --fixed-fps 60 --path . res://tests/anim_verify.tscn
+          echo "::endgroup::"
+
   # ── 2. Windows 构建 ────────────────────────────────────
   windows:
     name: Windows Build

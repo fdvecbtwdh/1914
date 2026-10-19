@@ -18,6 +18,10 @@ claude-skip-perms.ps1
 /build-env/
 /build/
 *.apk
+
 .zcode/
 deploy/node_modules/
 /android/
+
+# 动画验证截图（本地生成，不入库）
+/.anim_shots/

@@ -37,6 +37,15 @@ var _front_labels: Array[Label] = []
 ## 复盘模式：无迷雾，全图局面公开显示（结算后复盘界面用）
 var review_mode := false
 
+## ── 表现层动画状态（不改动任何游戏数据，只做视觉补间）──
+const ANIM_MOVE_DUR: float = 0.26      # 单位滑行时长
+const ANIM_ATTACK_LUNGE: float = 14.0  # 攻击突进位移
+
+var _rendered_state: BattleState = null   # 最近一次渲染的状态
+var _prev_state: BattleState = null       # 上一个状态（用于比较数字变化）
+var _visible_state: BattleState = null    # 可见格子缓存的归属状态
+var _visible_cells_cache: Dictionary = {}  # {Vector2i: true} 当前视角可见格
+
 
 func _ready() -> void:
 	print("[Board] Ready — waiting for TurnManager")
@@ -50,6 +59,8 @@ func _ready() -> void:
 func setup(tm: TurnManager) -> void:
 	turn_manager = tm
 	turn_manager.state_changed.connect(_on_state_changed)
+	# 动作被接受后播动画：action_applied 在 state_changed 之后发出，此时画面已同步重绘完毕
+	turn_manager.action_applied.connect(_on_action_applied)
 
 
 func _recalc_grid_offset() -> void:
@@ -125,10 +136,17 @@ func _viewer_idx(state: BattleState) -> int:
 
 
 func _on_state_changed(new_state: BattleState) -> void:
+	_clear_anim_nodes()
 	_deselect_unit()
 	_clear_unit_displays()
 	if new_state == null:
+		_prev_state = null
+		_rendered_state = null
 		return
+	# 同一状态下重复渲染（窗口 resize）不算新的回合，保留上一次状态做差值
+	if new_state != _rendered_state:
+		_prev_state = _rendered_state
+		_rendered_state = new_state
 	_update_markers(new_state.active_player_index)
 	_render_units(new_state)
 	_update_visibility(new_state)
@@ -165,28 +183,54 @@ func _render_units(state: BattleState) -> void:
 				var unit: BattleState.UnitData = state.board.get_unit(row, col, layer)
 				if unit == null:
 					continue
-				var card_data: Resource = CardDataLoader.cards.get(unit.card_id)
-				if card_data == null:
-					continue
-				var display := spawn_card(card_data)
-				display.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 棋盘单位不可拖拽（状态驱动渲染）
-				var pos := _grid_offset + Vector2(col * SLOT_SPACING.x, row * SLOT_SPACING.y)
 				var is_air: bool = layer == "air"
-				if is_air:
-					pos += Vector2(26, -18)  # 空军叠在陆军格上方，错位显示
-				display.position = pos
-				# 己方原色，敌方微偏红（联网按本地玩家视角）；空军加浅蓝调
-				var viewer := _viewer_idx(state)
-				var base := Color(0.3, 0.4, 0.5, 1.0) if unit.owner_index == viewer else Color(0.48, 0.3, 0.32, 1.0)
-				if is_air:
-					base = Color(0.3, 0.45, 0.62, 1.0) if unit.owner_index == viewer else Color(0.42, 0.34, 0.5, 1.0)
-				_set_card_bg(display, base)
-				_update_unit_stats(display, unit.attack, unit.defense)
-				if is_air:
-					_add_air_marker(display)
-				_update_unit_tags(display, unit)
+				var display := _build_unit_display(unit, state, is_air)
+				if display == null:
+					continue
+				display.mouse_filter = Control.MOUSE_FILTER_IGNORE  # 棋盘单位不可拖拽（状态驱动渲染）
+				display.position = _cell_pos(row, col, is_air)
 				add_child(display)
 				_unit_displays[Vector3i(row, col, 1 if is_air else 0)] = display
+
+
+## 按状态构造一张单位显示卡（渲染与动画残影共用，保证外观一致）。
+## 返回 null 表示缺卡数据，调用方跳过。
+func _build_unit_display(unit: BattleState.UnitData, state: BattleState, is_air: bool) -> CardDisplay:
+	var card_data: Resource = CardDataLoader.cards.get(unit.card_id)
+	if card_data == null:
+		return null
+	var display := spawn_card(card_data) as CardDisplay
+	if display == null:
+		return null
+	# 己方原色，敌方微偏红（联网按本地玩家视角）；空军加浅蓝调
+	var viewer := _viewer_idx(state)
+	var base := Color(0.3, 0.4, 0.5, 1.0) if unit.owner_index == viewer else Color(0.48, 0.3, 0.32, 1.0)
+	if is_air:
+		base = Color(0.3, 0.45, 0.62, 1.0) if unit.owner_index == viewer else Color(0.42, 0.34, 0.5, 1.0)
+	_set_card_bg(display, base)
+	_update_unit_stats(display, unit.attack, unit.defense)
+	if is_air:
+		_add_air_marker(display)
+	_update_unit_tags(display, unit)
+	return display
+
+
+## 格子左上角坐标（空域层错位到右上）
+func _cell_pos(row: int, col: int, is_air: bool) -> Vector2:
+	var pos := _grid_offset + Vector2(col * SLOT_SPACING.x, row * SLOT_SPACING.y)
+	if is_air:
+		pos += Vector2(26, -18)  # 空军叠在陆军格上方，错位显示
+	return pos
+
+
+## 当前视角该格是否可见（动画不得泄露迷雾中的信息）
+func _cell_visible(state: BattleState, row: int, col: int) -> bool:
+	if state == null or review_mode:
+		return true
+	if _visible_state != state:
+		_visible_state = state
+		_visible_cells_cache = GameLogic.compute_visible_cells(state, _viewer_idx(state))
+	return _visible_cells_cache.has(Vector2i(row, col))
 
 
 ## 4.3 单位状态标签：从单位状态数据读取（坚守/巡逻/守护/防空/补给/潜行/突击/冲锋/收缴/已行动）
@@ -447,6 +491,8 @@ func _select_unit(row: int, col: int) -> void:
 		sel_overlay.color = Color(1.0, 0.85, 0.2, 0.25)
 		sel_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_unit_displays[key].add_child(sel_overlay)
+		# 选中框呼吸，提示"这个单位正在等你下令"
+		UiAnim.pulse_loop(sel_overlay, 0.25, 0.95, 0.9)
 
 
 func _apply_attack_highlights(state: BattleState, from_row: int, from_col: int) -> void:
@@ -550,3 +596,247 @@ func spawn_card(card_data: Resource) -> Control:
 
 func get_grid_right_edge() -> float:
 	return _grid_offset.x + GRID_SIZE * SLOT_SPACING.x
+
+
+# ═══════════════════════════════════════════════════════════════
+# 表现层动画 — 只读 prev/cur 两份状态做差值，绝不修改状态
+# ═══════════════════════════════════════════════════════════════
+
+## 清理上一次动作留下的临时视觉节点（飘字、残影）
+func _clear_anim_nodes() -> void:
+	for child in get_children():
+		if UiAnim.is_marked(child):
+			child.queue_free()
+
+
+## 动作被接受后统一入口：state_changed 已经同步重绘完毕，这里只补视觉过渡
+func _on_action_applied(action: Dictionary) -> void:
+	if review_mode:
+		return
+	var prev := _prev_state
+	if turn_manager == null:
+		return
+	var cur: BattleState = turn_manager.get_state()
+	if prev == null or cur == null or prev == cur:
+		return
+	match str(action.get("type", "")):
+		"move":
+			_anim_move(prev, cur, action)
+		"attack":
+			_anim_attack(prev, cur, action)
+		"deploy":
+			_anim_deploy(prev, cur, action)
+		"build_fort":
+			_anim_build_fort(prev, cur, action)
+		"end_turn", "skip_phase":
+			_anim_turn_shift(prev, cur)
+		_:
+			pass
+	# 战线占领度变化（移动/攻击/回合结束都可能导致）
+	_anim_front_control(prev, cur)
+
+
+## ── 移动：旧格残影滑到新格，落点卡到位后弹一下 ──
+func _anim_move(prev: BattleState, cur: BattleState, action: Dictionary) -> void:
+	var fr := int(action.get("from_row", -1))
+	var fc := int(action.get("from_col", -1))
+	var tr := int(action.get("to_row", -1))
+	var tc := int(action.get("to_col", -1))
+	if fr < 0 or fc < 0 or tr < 0 or tc < 0:
+		return
+	var is_air: bool = prev.board.get_unit(fr, fc, "air") != null
+	var layer := "air" if is_air else "ground"
+	var unit: BattleState.UnitData = cur.board.get_unit(tr, tc, layer)
+	if unit == null:
+		return
+	# 迷雾：起点和终点都不可见时不播，避免泄露敌军调度
+	if not _cell_visible(cur, fr, fc) and not _cell_visible(cur, tr, tc):
+		return
+	var from_pos := _cell_pos(fr, fc, is_air)
+	var to_pos := _cell_pos(tr, tc, is_air)
+	var dest: CardDisplay = _unit_displays.get(Vector3i(tr, tc, 1 if is_air else 0))
+
+	var ghost := _build_unit_display(unit, cur, is_air)
+	if ghost == null:
+		return
+	ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ghost.position = from_pos
+	ghost.z_index = 5  # 滑行残影压在单位之下、迷雾(100)之上以下
+	UiAnim.mark(ghost)
+	add_child(ghost)
+	# 终点卡先藏起来，等残影跑到位再显形（否则看起来是"两个单位"）
+	if dest != null and is_instance_valid(dest):
+		dest.visible = false
+
+	var mid := from_pos.lerp(to_pos, 0.5) + Vector2(0.0, -10.0)
+	var t := ghost.create_tween()
+	t.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_property(ghost, "position", mid, ANIM_MOVE_DUR * 0.45)
+	t.tween_property(ghost, "position", to_pos, ANIM_MOVE_DUR * 0.55)
+	t.tween_callback(func():
+		if is_instance_valid(dest):
+			dest.visible = true
+			UiAnim.pop(dest, 1.1, 0.16)
+		if is_instance_valid(ghost):
+			ghost.queue_free()
+	)
+
+
+## ── 攻击：突进 → 目标抖动/红闪/飘伤害 → 击毁残影灰化 → 反击飘字 ──
+func _anim_attack(prev: BattleState, cur: BattleState, action: Dictionary) -> void:
+	var fr := int(action.get("from_row", -1))
+	var fc := int(action.get("from_col", -1))
+	var tr := int(action.get("target_row", -1))
+	var tc := int(action.get("target_col", -1))
+	if fr < 0 or fc < 0 or tr < 0 or tc < 0:
+		return
+	var atk_air: bool = prev.board.get_unit(fr, fc, "air") != null
+	var atk_prev: BattleState.UnitData = prev.board.get_unit(fr, fc, "air" if atk_air else "ground")
+	var tgt_air: bool = prev.board.get_unit(tr, tc, "air") != null
+	var tgt_prev: BattleState.UnitData = prev.board.get_unit(tr, tc, "air" if tgt_air else "ground")
+	var tgt_cur: BattleState.UnitData = cur.board.get_unit(tr, tc, "air" if tgt_air else "ground")
+	if tgt_prev == null and tgt_cur == null:
+		return
+	var visible_target := _cell_visible(cur, tr, tc)
+	var dmg := _attack_damage(cur, fr, fc, tr, tc, tgt_prev, tgt_cur)
+	var hit_pos := _cell_pos(tr, tc, tgt_air)
+
+	# 1. 攻击方朝目标小幅突进再回位
+	var atk_disp: CardDisplay = _unit_displays.get(Vector3i(fr, fc, 1 if atk_air else 0))
+	if atk_disp != null and is_instance_valid(atk_disp):
+		var base := atk_disp.position
+		var dir := (Vector2(tc - fc, tr - fr)).normalized()
+		if dir == Vector2.ZERO:
+			dir = Vector2.DOWN
+		var t := atk_disp.create_tween()
+		t.tween_property(atk_disp, "position", base + dir * ANIM_ATTACK_LUNGE, 0.09) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		t.tween_property(atk_disp, "position", base, 0.13).set_trans(Tween.TRANS_QUAD)
+
+	# 2. 目标受击反馈（迷雾中的敌军不播，避免暴露血量）
+	if visible_target:
+		if dmg > 0:
+			UiAnim.float_text(self, "-%d" % dmg, hit_pos + Vector2(24, 2),
+				Color(1.0, 0.35, 0.3), 20, 36.0, 0.72)
+		var tgt_disp: CardDisplay = _unit_displays.get(Vector3i(tr, tc, 1 if tgt_air else 0))
+		if tgt_disp != null and is_instance_valid(tgt_disp):
+			UiAnim.shake(tgt_disp, 6.0, 0.26)
+			UiAnim.tint(tgt_disp, Color(1.0, 0.45, 0.45), 0.36)
+			_pop_def_stat(tgt_disp)
+		# 3. 击毁：留一张灰化残影缩退消失
+		if tgt_cur == null and tgt_prev != null:
+			_spawn_death_ghost(tgt_prev, prev, hit_pos, tgt_air)
+			UiAnim.float_text(self, "击破", hit_pos + Vector2(16, 30),
+				Color(1.0, 0.85, 0.3), 16, 28.0, 0.8)
+	# 4. 反击：攻击方掉了防御
+	if atk_prev != null:
+		var atk_cur: BattleState.UnitData = cur.board.get_unit(fr, fc, "air" if atk_air else "ground")
+		var counter: int = atk_prev.defense - (atk_cur.defense if atk_cur != null else 0)
+		if counter > 0:
+			var atk_pos := _cell_pos(fr, fc, atk_air)
+			UiAnim.float_text(self, "-%d" % counter, atk_pos + Vector2(24, 2),
+				Color(1.0, 0.62, 0.35), 16, 30.0, 0.72)
+			if atk_disp != null and is_instance_valid(atk_disp):
+				UiAnim.shake(atk_disp, 4.0, 0.2)
+
+
+## 从本回合 action_log 取这次攻击的伤害值，取不到就用防御力差值兜底
+func _attack_damage(cur: BattleState, fr: int, fc: int, tr: int, tc: int,
+		tgt_prev: BattleState.UnitData, tgt_cur: BattleState.UnitData) -> int:
+	for i in range(cur.action_log.size() - 1, -1, -1):
+		var entry: Dictionary = cur.action_log[i]
+		if str(entry.get("type", "")) != "attack":
+			continue
+		var f = entry.get("from", [])
+		var to = entry.get("to", [])
+		if f is Array and to is Array and f.size() == 2 and to.size() == 2 \
+				and int(f[0]) == fr and int(f[1]) == fc \
+				and int(to[0]) == tr and int(to[1]) == tc:
+			return int(entry.get("damage", 0))
+	if tgt_prev != null:
+		var cur_def: int = tgt_cur.defense if tgt_cur != null else 0
+		return maxi(0, tgt_prev.defense - cur_def)
+	return 0
+
+
+func _spawn_death_ghost(unit: BattleState.UnitData, state: BattleState, pos: Vector2, is_air: bool) -> void:
+	var ghost := _build_unit_display(unit, state, is_air)
+	if ghost == null:
+		return
+	ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ghost.position = pos
+	ghost.z_index = 6
+	UiAnim.mark(ghost)
+	add_child(ghost)
+	ghost.modulate = Color(0.5, 0.5, 0.5, 1.0)
+	UiAnim.fade_out(ghost, 0.42)
+
+
+## 防御力数字弹一下（卡内右下角小标签）
+func _pop_def_stat(display: Control) -> void:
+	for child in display.get_children():
+		if child is Label:
+			var lbl := child as Label
+			if lbl.position.x > 50 and lbl.position.y > 70:
+				UiAnim.pop(lbl, 1.6, 0.26)
+				return
+
+
+## ── 部署：缩放入场 + 绿闪 ──
+func _anim_deploy(prev: BattleState, cur: BattleState, action: Dictionary) -> void:
+	var row := int(action.get("row", -1))
+	var col := int(action.get("col", -1))
+	if row < 0 or col < 0:
+		return
+	var is_air: bool = cur.board.get_unit(row, col, "air") != null \
+		and prev.board.get_unit(row, col, "air") == null
+	var display: CardDisplay = _unit_displays.get(Vector3i(row, col, 1 if is_air else 0))
+	if display != null and is_instance_valid(display):
+		UiAnim.scale_in(display, 0.28)
+		UiAnim.tint(display, Color(0.7, 1.0, 0.7), 0.45)
+
+
+## ── 筑垒：弹一下 + "坚守"标签 ──
+func _anim_build_fort(_prev: BattleState, cur: BattleState, action: Dictionary) -> void:
+	var row := int(action.get("row", -1))
+	var col := int(action.get("col", -1))
+	if row < 0 or col < 0:
+		row = int(action.get("from_row", -1))
+		col = int(action.get("from_col", -1))
+	if row < 0 or col < 0:
+		return
+	var is_air: bool = cur.board.get_unit(row, col, "air") != null
+	var display: CardDisplay = _unit_displays.get(Vector3i(row, col, 1 if is_air else 0))
+	if display == null or not is_instance_valid(display):
+		return
+	UiAnim.pop(display, 1.16, 0.22)
+	UiAnim.float_text(self, "坚守+1", _cell_pos(row, col, is_air) + Vector2(8, 30),
+		Color(1.0, 0.92, 0.55), 14, 26.0, 0.7)
+
+
+## ── 回合切换：行动方标记脉冲 ──
+func _anim_turn_shift(prev: BattleState, cur: BattleState) -> void:
+	if prev.active_player_index == cur.active_player_index:
+		return
+	var marker: Label = _p1_marker if cur.active_player_index == 0 else _p2_marker
+	if marker != null and is_instance_valid(marker):
+		UiAnim.pop(marker, 1.3, 0.34)
+
+
+## ── 战线占领度：数值弹动 + 浮动增量 ──
+func _anim_front_control(prev: BattleState, cur: BattleState) -> void:
+	var n := mini(prev.front_control.size(), cur.front_control.size())
+	for r in range(mini(n, _front_labels.size())):
+		var before := int(prev.front_control[r])
+		var after := int(cur.front_control[r])
+		if before == after:
+			continue
+		var lbl := _front_labels[r]
+		if lbl == null or not is_instance_valid(lbl):
+			continue
+		UiAnim.pop(lbl, 1.35, 0.26)
+		var delta := after - before
+		var txt := ("+%d" % delta) if delta > 0 else str(delta)
+		UiAnim.float_text(self, txt, lbl.position + Vector2(2, 2),
+			Color(0.45, 0.85, 1.0) if delta > 0 else Color(1.0, 0.5, 0.5), 13, 22.0, 0.7)
+

@@ -30,12 +30,19 @@ var _turn_label: Label = null
 var _pending_deploy_card: String = ""
 var _banner: Label = null
 
+## ── 表现层动画状态 ──
+var _prev_ui_state: BattleState = null   # 上一帧状态，用于资源/回合数字差值
+var _banner_text: String = ""            # 上次横幅文案（变化时才播入场动画）
+var _end_breath: Tween = null            # 结束回合按钮的呼吸补间
+var _end_btn_breathing: bool = false
+
 
 func setup(tm: TurnManager) -> void:
 	turn_manager = tm
 	_build_ui()  # 先构建，再连接信号（避免 build 前的状态变更打到 null 控件）
 	turn_manager.state_changed.connect(_on_state_changed)
 	turn_manager.game_over.connect(_on_game_over)
+	turn_manager.action_applied.connect(_on_action_applied)
 
 
 func _get_panel_x() -> float:
@@ -138,6 +145,8 @@ func _input_hint_text() -> String:
 
 
 func _on_state_changed(new_state: BattleState) -> void:
+	var prev := _prev_ui_state
+	_prev_ui_state = new_state
 	_pending_deploy_card = ""
 	if _cancel_btn != null:
 		_cancel_btn.visible = false
@@ -146,50 +155,108 @@ func _on_state_changed(new_state: BattleState) -> void:
 	_clear_dynamic_ui()
 	if new_state == null:
 		return
-	_update_info(new_state)
-	_update_resources(new_state)
-	_render_purchase_zone(new_state)
-	_render_hand(new_state)
-	_update_turn_ui(new_state)
+	_update_info(new_state, prev)
+	_update_resources(new_state, prev)
+	_render_purchase_zone(new_state, prev)
+	_render_hand(new_state, prev)
+	_update_turn_ui(new_state, prev)
 
 
 ## 回合横幅 + 控制按钮可用性（联网按本地玩家视角，本地同屏按行动方）
-func _update_turn_ui(state: BattleState) -> void:
+func _update_turn_ui(state: BattleState, _prev: BattleState = null) -> void:
 	if _banner == null:
 		return
+	var text := ""
+	var color := Color(0.7, 0.7, 0.7)
+	var controls := true
+	var kind := "info"
 	if state.winner != -1:
-		_banner.text = "玩家 %d 获胜！" % (state.winner + 1)
-		_banner.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
-		_set_controls_enabled(false)
-		return
-	if NetworkManager.opponent_left:
-		_banner.text = "对手已断线，本局无效"
-		_banner.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
-		_set_controls_enabled(false)
-		return
-	if GameManager.ai_player_idx >= 0 and state.active_player_index == GameManager.ai_player_idx:
+		text = "玩家 %d 获胜！" % (state.winner + 1)
+		color = Color(1.0, 0.85, 0.2)
+		controls = false
+		kind = "win"
+	elif NetworkManager.opponent_left:
+		text = "对手已断线，本局无效"
+		color = Color(1.0, 0.4, 0.4)
+		controls = false
+		kind = "error"
+	elif GameManager.ai_player_idx >= 0 and state.active_player_index == GameManager.ai_player_idx:
 		var diff_name: String = {"easy": "简单", "normal": "普通", "hard": "困难"}.get(GameManager.ai_difficulty, GameManager.ai_difficulty)
-		_banner.text = "AI 行动中（%s）…" % diff_name
-		_banner.add_theme_color_override("font_color", Color(0.95, 0.75, 0.4))
+		text = "AI 行动中（%s）…" % diff_name
+		color = Color(0.95, 0.75, 0.4)
+		controls = false
+		kind = "ai"
+	else:
+		var local := NetworkManager.local_player_idx if NetworkManager.is_network_game else state.active_player_index
+		if state.active_player_index == local:
+			text = "轮到你行动"
+			color = Color(0.4, 1.0, 0.5)
+			kind = "you"
+		else:
+			text = "等待对手行动…"
+			color = Color(0.7, 0.7, 0.7)
+	_banner.text = text
+	_banner.add_theme_color_override("font_color", color)
+	if controls:
+		# 结束回合仅在 action 阶段可用
+		_end_btn.disabled = state.phase != "action"
+		_skip_btn.disabled = false
+	else:
 		_end_btn.disabled = true
 		_skip_btn.disabled = true
+	# 可点状态下轻微呼吸，提示"现在轮到你操作"
+	_update_end_btn_breath(controls and not _end_btn.disabled)
+	# 横幅文案变化才播入场，避免每次 action 重绘都闪
+	if text != _banner_text:
+		_banner_text = text
+		UiAnim.fade_in_scale(_banner, 0.92, 0.24)
+		if kind == "win":
+			UiAnim.pop(_banner, 1.35, 0.5)
+		elif kind == "you":
+			UiAnim.tint(_banner, Color(1.35, 1.35, 1.35), 0.55)
+
+
+## 结束回合按钮呼吸（只在真正可点时开）
+func _update_end_btn_breath(on: bool) -> void:
+	if _end_btn == null:
 		return
-	var local := NetworkManager.local_player_idx if NetworkManager.is_network_game else state.active_player_index
-	if state.active_player_index == local:
-		_banner.text = "轮到你行动"
-		_banner.add_theme_color_override("font_color", Color(0.4, 1.0, 0.5))
-	else:
-		_banner.text = "等待对手行动…"
-		_banner.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	# 结束回合仅在 action 阶段可用
-	_end_btn.disabled = state.phase != "action"
-	_skip_btn.disabled = false
+	if on == _end_btn_breathing:
+		return
+	_end_btn_breathing = on
+	if _end_breath != null and _end_breath.is_valid():
+		_end_breath.kill()
+	_end_breath = null
+	_end_btn.self_modulate = Color(1.0, 1.0, 1.0, 1.0)
+	if not on:
+		return
+	var t := _end_btn.create_tween().set_loops()
+	t.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	t.tween_property(_end_btn, "self_modulate", Color(1.0, 1.0, 1.0, 0.72), 0.9)
+	t.tween_property(_end_btn, "self_modulate", Color(1.0, 1.0, 1.0, 1.0), 0.9)
+	_end_breath = t
+
+
+## 指令卡使用反馈：横幅弹一下 + 卡片名飘字
+func _on_action_applied(action: Dictionary) -> void:
+	if str(action.get("type", "")) != "play_order":
+		return
+	var card_id := str(action.get("card_id", ""))
+	var card_data: Resource = CardDataLoader.cards.get(card_id)
+	var card_name := str(card_data.card_name) if card_data != null else card_id
+	var vs := _get_viewport()
+	UiAnim.float_text(self, "指令 · %s" % card_name, Vector2(vs.x * 0.5 - 46.0, 44.0),
+		Color(1.0, 0.86, 0.42), 16, 28.0, 0.9)
+	if _banner != null and is_instance_valid(_banner):
+		UiAnim.pop(_banner, 1.18, 0.3)
 
 
 func _on_game_over(winner: int) -> void:
 	if _banner != null:
 		_banner.text = "玩家 %d 获胜！" % (winner + 1)
 		_banner.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+		_banner_text = _banner.text
+		UiAnim.pop(_banner, 1.4, 0.5)
+		UiAnim.tint(_banner, Color(1.6, 1.3, 0.7), 0.7)
 	_set_controls_enabled(false)
 
 
@@ -200,26 +267,63 @@ func _set_controls_enabled(enabled: bool) -> void:
 		_skip_btn.disabled = not enabled
 
 
-func _update_info(state: BattleState) -> void:
+func _update_info(state: BattleState, prev: BattleState = null) -> void:
 	_turn_label.text = "回合 %d" % state.turn
 	_player_label.text = "玩家 %d" % (state.active_player_index + 1)
 	_phase_label.text = "阶段: %s" % state.phase
+	if prev == null:
+		return
+	# 数值变化时弹一下：回合数/行动方/阶段
+	if prev.turn != state.turn:
+		UiAnim.pop(_turn_label, 1.22, 0.3)
+	if prev.active_player_index != state.active_player_index:
+		UiAnim.pop(_player_label, 1.22, 0.3)
+	if prev.phase != state.phase:
+		UiAnim.pop(_phase_label, 1.18, 0.24)
 
 
-func _update_resources(state: BattleState) -> void:
+func _update_resources(state: BattleState, prev: BattleState = null) -> void:
 	var player = state.players[state.active_player_index]
-	_g_label.text = "G: %d" % player.resources["G"]
-	_k_label.text = "K: %d" % player.resources["K"]
-	_z_label.text = "Z: %d" % player.resources["Z"]
+	var g := int(player.resources["G"])
+	var k := int(player.resources["K"])
+	var z := int(player.resources["Z"])
+	# 文本同步写成最终值：动画只做视觉余韵，不得改变最终读数
+	_g_label.text = "G: %d" % g
+	_k_label.text = "K: %d" % k
+	_z_label.text = "Z: %d" % z
+	if prev == null or prev.active_player_index != state.active_player_index:
+		return  # 换人时资源归位，不做差值动画
+	var pp = prev.players[prev.active_player_index]
+	_animate_resource_delta(_g_label, "G", g, int(pp.resources["G"]))
+	_animate_resource_delta(_k_label, "K", k, int(pp.resources["K"]))
+	_animate_resource_delta(_z_label, "Z", z, int(pp.resources["Z"]))
 
 
-func _render_purchase_zone(state: BattleState) -> void:
+## 资源数字变化：弹一下 + 涨绿跌红 + 浮动增量
+func _animate_resource_delta(lbl: Label, key: String, now: int, before: int) -> void:
+	if lbl == null or not is_instance_valid(lbl) or now == before:
+		return
+	var delta := now - before
+	var up := delta > 0
+	UiAnim.pop(lbl, 1.25, 0.24)
+	UiAnim.tint(lbl, Color(0.6, 1.0, 0.6) if up else Color(1.0, 0.55, 0.55), 0.5)
+	var txt := ("+%d" % delta) if up else str(delta)
+	UiAnim.float_text(self, "%s %s" % [key, txt], lbl.position + Vector2(0, -6),
+		Color(0.5, 1.0, 0.55) if up else Color(1.0, 0.5, 0.5), 13, 20.0, 0.65)
+
+
+func _render_purchase_zone(state: BattleState, prev: BattleState = null) -> void:
 	var player = state.players[state.active_player_index]
 	_purchase_order.clear()
 	if player.purchase_zone.is_empty():
 		return
 	var px := _get_panel_x()
 	var py := _get_panel_top_y()
+	# 新出现的购买选项滑入（首帧/换人时全部滑入，同回合补货只滑新卡）
+	var prev_ids: Array = []
+	var animate_all := prev == null or prev.active_player_index != state.active_player_index
+	if prev != null:
+		prev_ids = prev.players[prev.active_player_index].purchase_zone
 	var title := Label.new()
 	title.text = "— 待购买区 —"
 	title.position = Vector2(px, py)
@@ -249,6 +353,8 @@ func _render_purchase_zone(state: BattleState) -> void:
 		btn.size.x = 190.0
 		btn.pressed.connect(_make_purchase_handler(card_id))
 		add_child(btn)
+		if animate_all or not prev_ids.has(card_id):
+			UiAnim.slide_in(btn, Vector2(16, 0), 0.22)
 		_purchase_buttons[card_id] = btn
 		_purchase_order.append(card_id)
 		py += CARD_BTN_HEIGHT + 4.0
@@ -263,8 +369,14 @@ func _rarity_tag(rarity: String) -> String:
 	return "[铜]"
 
 
-func _render_hand(state: BattleState) -> void:
+func _render_hand(state: BattleState, prev: BattleState = null) -> void:
 	var player = state.players[state.active_player_index]
+	# 新手牌滑入：首帧全部滑入；同回合内只有真正新抽到的卡滑入
+	var prev_ids: Array = []
+	if prev != null:
+		prev_ids = prev.players[prev.active_player_index].hand
+	var animate_all := prev == null
+	var same_player := prev != null and prev.active_player_index == state.active_player_index
 	_hand_order.clear()
 	if player.hand.is_empty():
 		return
@@ -314,6 +426,8 @@ func _render_hand(state: BattleState) -> void:
 		btn.position = Vector2(px, py)
 		btn.size.x = 190.0
 		add_child(btn)
+		if animate_all or (same_player and not prev_ids.has(card_id)):
+			UiAnim.slide_in(btn, Vector2(18, 0), 0.22)
 		_hand_buttons[card_id] = btn
 		_hand_order.append(card_id)
 		py += CARD_BTN_HEIGHT + 4.0
