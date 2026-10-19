@@ -314,7 +314,14 @@ func _update_visibility(state: BattleState) -> void:
 		var unit := state.board.get_unit(k3.x, k3.y, layer)
 		if unit == null or unit.owner_index == viewer_idx:
 			continue  # 跳过己方单位（始终可见）
-		display.set_visible_to_enemy(visible_cells.has(Vector2i(k3.x, k3.y)), unit.stealthed, unit.revealed)
+		var visible_now: bool = visible_cells.has(Vector2i(k3.x, k3.y))
+		if not visible_now and layer == "air":
+			# 空域层是错位显示的（右上偏移 26,-18，见 _cell_pos）。雾里如果只把卡片刷成灰色，
+			# 这张 80x100 的灰卡会比格子雾块整整错开一截，从连续迷雾里探出一个方块。
+			# 空域单位在雾中直接整张隐藏：迷雾交给格子级雾层，观感与普通迷雾格一致。
+			display.hide()
+			continue
+		display.set_visible_to_enemy(visible_now, unit.stealthed, unit.revealed)
 	# 2. 格子级迷雾：所有不可见格子一律覆盖
 	_apply_fog_layer(state, visible_cells)
 

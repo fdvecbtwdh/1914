@@ -79,6 +79,30 @@ func _run_all() -> void:
 	var enemy_disp: Control = board._unit_displays[Vector3i(3, 3, 0)]
 	_check(fog_layer.z_index > 0 and enemy_disp.z_index == 0, "enemy card drawn below fog layer")
 
+	# 3b. 空域单位：错位显示会从格子雾块里探出一截，雾中必须整张隐藏（不留凸块）
+	var air_u := BattleState.UnitData.new()
+	air_u.card_id = "test_infantry_01"
+	air_u.owner_index = 1
+	air_u.attack = 2
+	air_u.defense = 2
+	air_u.max_defense = 2
+	st.board.set_unit(4, 4, air_u, "air")
+	_place_unit(st, 1, 4, 0)  # 地面参照物
+	tm.state_changed.emit(st)
+	var air_fogged = board._unit_displays.get(Vector3i(4, 4, 1))
+	_check(air_fogged != null, "enemy air display node exists")
+	_check(air_fogged != null and not air_fogged.visible, "enemy air unit in fog is fully hidden")
+	_check(board._fog_rects[Vector2i(4, 4)].visible, "air unit cell still fogged")
+	# 地面单位保持原行为：卡片留在雾块下方（尺寸与格子一致，不露边）
+	var ground_disp = board._unit_displays.get(Vector3i(4, 0, 0))
+	_check(ground_disp != null and ground_disp.visible, "ground unit in fog stays under fog rect")
+	# 空域单位进入视野后要能重新出现
+	st.board.set_unit(1, 1, null, "air")
+	st.board.set_unit(1, 2, air_u, "air")
+	tm.state_changed.emit(st)
+	var air_vis = board._unit_displays.get(Vector3i(1, 2, 1))
+	_check(air_vis != null and air_vis.visible, "enemy air unit re-appears once visible")
+
 	# 4. 占领度标签：文本与颜色
 	st.front_control = [50, -25, 100, 0, -100]
 	tm.state_changed.emit(st)
