@@ -15,6 +15,8 @@ var rounds := 0
 
 
 func _ready() -> void:
+	# 固定随机种子：洗牌与 AI 噪声都走全局 RNG，不种子化的话每次跑到的场景不同，断言会随机漂移（CI 上尤其明显）
+	seed(20251019)
 	await get_tree().process_frame
 	battle = load("res://scenes/battle.tscn").instantiate()
 	get_tree().root.add_child(battle)
@@ -116,6 +118,12 @@ func _drive() -> void:
 				check("部署：新单位缩放进场（scale < 1）", _min_display_scale() < 0.999, "min scale=%f" % _min_display_scale())
 				await frames(30)
 				check("部署：动画结束后新单位 scale 回 1", absf(_min_display_scale() - 1.0) < 0.02, "min scale=%f" % _min_display_scale())
+				# 进场动画（缩放入场 + 染色）结束后，卡牌必须仍然是完全不透明的
+				var dep_disp = _display_for(int(dep["row"]), int(dep["col"]))
+				check("部署：动画结束后单位 alpha 回 1", dep_disp != null and dep_disp.modulate.a > 0.99,
+					"alpha=%s" % str(dep_disp.modulate.a if dep_disp != null else null))
+				check("部署：动画结束后单位仍可见", dep_disp != null and dep_disp.visible and dep_disp.scale.x > 0.5,
+					"visible=%s scale=%s" % [str(dep_disp.visible if dep_disp != null else null), str(dep_disp.scale if dep_disp != null else null)])
 			dep = _pick_deploy(tm.get_state())
 		if tm.get_state().phase == "deploy":
 			_submit({"type": "skip_phase"})
@@ -153,6 +161,8 @@ func _drive() -> void:
 		if not mv.is_empty():
 			var from_cell := Vector2i(int(mv["from_row"]), int(mv["from_col"]))
 			var to_cell := Vector2i(int(mv["to_row"]), int(mv["to_col"]))
+			var pre := tm.get_state()
+			var mv_air: bool = pre.board.get_unit(from_cell.x, from_cell.y, "air") != null
 			_submit({"type": "move", "from_row": from_cell.x, "from_col": from_cell.y, "to_row": to_cell.x, "to_col": to_cell.y})
 			await frames(3)
 			if not done.has("move"):
@@ -164,12 +174,12 @@ func _drive() -> void:
 				if not ghosts.is_empty():
 					var gp: Vector2 = ghosts[0].position
 					check("移动：残影位于起点与终点之间", gp != a and gp != b and gp.distance_to(a) > 1.0, "ghost=%s from=%s to=%s" % [str(gp), str(a), str(b)])
-				var dest = _display_for(to_cell.x, to_cell.y)
-				check("移动：终点原位卡在滑行期间隐藏", dest != null and not dest.visible, "visible=%s" % str(dest.visible if dest != null else null))
+				var dest = _display_for(to_cell.x, to_cell.y, 1 if mv_air else 0)
+				check("移动：终点原位卡在滑行期间隐藏", dest != null and not dest.visible, "visible=%s air=%s" % [str(dest.visible if dest != null else null), str(mv_air)])
 				await frames(30)
 				check("移动：滑行结束残影清理", _ghosts().is_empty(), "%d ghost(s)" % _ghosts().size())
-				var dest2 = _display_for(to_cell.x, to_cell.y)
-				check("移动：终点卡恢复可见", dest2 != null and dest2.visible, "visible=%s" % str(dest2.visible if dest2 != null else null))
+				var dest2 = _display_for(to_cell.x, to_cell.y, 1 if mv_air else 0)
+				check("移动：终点卡恢复可见", dest2 != null and dest2.visible, "visible=%s air=%s" % [str(dest2.visible if dest2 != null else null), str(mv_air)])
 				var b_air: Vector2 = board._cell_pos(to_cell.x, to_cell.y, true)
 				check("移动：终点卡回到网格位置", dest2 != null and (dest2.position.distance_to(b) < 1.0 or dest2.position.distance_to(b_air) < 1.0),
 					"pos=%s expect=%s|%s" % [str(dest2.position if dest2 != null else null), str(b), str(b_air)])
@@ -193,9 +203,10 @@ func _unit_exists_at(row: int, col: int) -> bool:
 	return st.board.get_unit(row, col, "ground") != null or st.board.get_unit(row, col, "air") != null
 
 
-func _display_for(row: int, col: int):
+func _display_for(row: int, col: int, layer: int = -1):
+	# layer: -1 任意图层；0 地面；1 空域（同一格可能同时站着地面与空军）
 	for k in board._unit_displays:
-		if int(k.x) == row and int(k.y) == col:
+		if int(k.x) == row and int(k.y) == col and (layer < 0 or int(k.z) == layer):
 			return board._unit_displays[k]
 	return null
 

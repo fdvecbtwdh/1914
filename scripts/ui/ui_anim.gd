@@ -61,13 +61,24 @@ static func shake(node: Control, amp: float = 6.0, dur: float = 0.26) -> void:
 
 
 ## 颜色闪烁（modulate 叠加染色，结束后还原）。
+## 只改 RGB、不碰 alpha：否则会和淡入/淡出类动画抢同一个属性。
+## 典型坑：缩放入场（alpha 0→1）与染色同时跑，染色把进场前捕获的 alpha=0 写回去，
+## 动画结束后整张卡变全透明，要等下一次整屏重绘才"重新出现"。
 static func tint(node: CanvasItem, color: Color, dur: float = 0.4) -> void:
 	if not _ok(node):
 		return
 	var base: Color = node.modulate
+	var from := Color(base.r, base.g, base.b)
+	var peak := Color(color.r, color.g, color.b)
 	var t := node.create_tween()
-	t.tween_property(node, "modulate", color, dur * 0.25)
-	t.tween_property(node, "modulate", base, dur * 0.75)
+	t.tween_method(_apply_rgb.bind(node), from, peak, dur * 0.25)
+	t.tween_method(_apply_rgb.bind(node), peak, from, dur * 0.75)
+
+
+## 只写回 modulate 的 RGB，当前 alpha 原样保留（避免把别人的淡入淡出踩掉）。
+static func _apply_rgb(c: Color, node: CanvasItem) -> void:
+	if _ok(node):
+		node.modulate = Color(c.r, c.g, c.b, node.modulate.a)
 
 
 ## 淡入 + 缩放入场（卡牌部署、横幅出现）。
