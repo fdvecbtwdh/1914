@@ -31,6 +31,45 @@ static func is_marked(node: Node) -> bool:
 	return node != null and is_instance_valid(node) and node.has_meta(FLOAT_META)
 
 
+## 打断安全（interruption-safe）机制：
+## 同一节点上重复触发同一种动画时（例：连续两次购买让同一个资源标签连续泛红），
+## 旧 Tween 必须被杀掉，而且"基态"（原始 scale / position / 颜色）在第一次触发时就被记住，
+## 收尾把节点恢复到那个基态 —— 否则第二次动画会把"红的中间态"当成原色，颜色就永远回不去了。
+static func _kill_prev(node: CanvasItem, key: String) -> void:
+	var meta := _tw_meta(key)
+	if node.has_meta(meta):
+		var prev: Variant = node.get_meta(meta)
+		if prev is Tween and (prev as Tween).is_valid():
+			(prev as Tween).kill()
+		node.remove_meta(meta)
+
+
+static func _track(node: CanvasItem, key: String, t: Tween) -> void:
+	node.set_meta(_tw_meta(key), t)
+
+
+static func _base(node: CanvasItem, key: String, cur: Variant) -> Variant:
+	var meta := _base_meta(key)
+	if node.has_meta(meta):
+		return node.get_meta(meta)
+	node.set_meta(meta, cur)
+	return cur
+
+
+static func _settle(node: CanvasItem, key: String) -> void:
+	for meta in [_tw_meta(key), _base_meta(key)]:
+		if node.has_meta(meta):
+			node.remove_meta(meta)
+
+
+static func _tw_meta(key: String) -> String:
+	return "ui_anim_tw_" + key
+
+
+static func _base_meta(key: String) -> String:
+	return "ui_anim_base_" + key
+
+
 ## 快速"弹一下"：放大到 peak 再回原位。用于数字标签、卡牌、标记。
 static func pop(node: CanvasItem, peak: float = 1.12, dur: float = 0.18) -> void:
 	if not _ok(node):
@@ -39,18 +78,26 @@ static func pop(node: CanvasItem, peak: float = 1.12, dur: float = 0.18) -> void
 		var c := node as Control
 		if c.size != Vector2.ZERO:
 			c.pivot_offset = c.size * 0.5
-	var base: Vector2 = node.scale
+	_kill_prev(node, "pop")
+	var base: Vector2 = _base(node, "pop", node.scale)
 	var t := node.create_tween()
 	t.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	t.tween_property(node, "scale", base * peak, dur * 0.4)
 	t.tween_property(node, "scale", base, dur * 0.6)
+	t.tween_callback(func():
+		if _ok(node):
+			node.scale = base
+			_settle(node, "pop")
+	)
+	_track(node, "pop", t)
 
 
 ## 左右抖动。用于受击卡牌；结束时回到原位置。
 static func shake(node: Control, amp: float = 6.0, dur: float = 0.26) -> void:
 	if not _ok(node):
 		return
-	var base: Vector2 = node.position
+	_kill_prev(node, "shake")
+	var base: Vector2 = _base(node, "shake", node.position)
 	var steps := 6
 	var t := node.create_tween()
 	for i in range(steps):
@@ -58,21 +105,33 @@ static func shake(node: Control, amp: float = 6.0, dur: float = 0.26) -> void:
 		var decay := 1.0 - float(i) / float(steps)
 		t.tween_property(node, "position", base + Vector2(amp * dir * decay, 0.0), dur / float(steps))
 	t.tween_property(node, "position", base, dur / float(steps))
+	t.tween_callback(func():
+		if _ok(node):
+			node.position = base
+			_settle(node, "shake")
+	)
+	_track(node, "shake", t)
 
 
 ## 颜色闪烁（modulate 叠加染色，结束后还原）。
-## 只改 RGB、不碰 alpha：否则会和淡入/淡出类动画抢同一个属性。
-## 典型坑：缩放入场（alpha 0→1）与染色同时跑，染色把进场前捕获的 alpha=0 写回去，
-## 动画结束后整张卡变全透明，要等下一次整屏重绘才"重新出现"。
+## - 只改 RGB、不碰 alpha：否则会和淡入/淡出类动画抢同一个属性（缩放入场时会把 alpha 写回 0）。
+## - 基色在第一次染色时记住，被打断也不丢：连续两次变红后仍能回到原色，不会"红着不走"。
 static func tint(node: CanvasItem, color: Color, dur: float = 0.4) -> void:
 	if not _ok(node):
 		return
-	var base: Color = node.modulate
-	var from := Color(base.r, base.g, base.b)
+	_kill_prev(node, "tint")
+	var base: Color = _base(node, "tint", Color(node.modulate.r, node.modulate.g, node.modulate.b))
+	var from := Color(node.modulate.r, node.modulate.g, node.modulate.b)
 	var peak := Color(color.r, color.g, color.b)
 	var t := node.create_tween()
 	t.tween_method(_apply_rgb.bind(node), from, peak, dur * 0.25)
-	t.tween_method(_apply_rgb.bind(node), peak, from, dur * 0.75)
+	t.tween_method(_apply_rgb.bind(node), peak, base, dur * 0.75)
+	t.tween_callback(func():
+		if _ok(node):
+			_apply_rgb(base, node)
+			_settle(node, "tint")
+	)
+	_track(node, "tint", t)
 
 
 ## 只写回 modulate 的 RGB，当前 alpha 原样保留（避免把别人的淡入淡出踩掉）。

@@ -40,6 +40,12 @@ func _ready() -> void:
 	await frames(60)
 	check("动画结束后无残留临时节点 (board)", _marked_children(board).is_empty(), str(_marked_children(board)))
 	check("回合数已推进", tm.get_state().turn >= 2, "turn=%d" % tm.get_state().turn)
+	# 真实路径收尾：一路买/部署/移动/攻击之后，资源标签不能停在"变红/放大"的中间态
+	for pair in [["G", hand._g_label], ["K", hand._k_label], ["Z", hand._z_label]]:
+		var lbl: Label = pair[1]
+		var ok_rgb: bool = lbl.modulate.r > 0.99 and lbl.modulate.g > 0.99 and lbl.modulate.b > 0.99
+		check("收尾：资源标签 %s 颜色回到白色" % pair[0], ok_rgb, str(lbl.modulate))
+		check("收尾：资源标签 %s 缩放回到 1" % pair[0], lbl.scale.distance_to(Vector2.ONE) < 0.02, str(lbl.scale))
 	# 复盘模式：不应产生任何临时动画节点（复盘是全图静态展示）
 	board.review_mode = true
 	board.render_review_state(tm.get_state())
@@ -49,6 +55,33 @@ func _ready() -> void:
 	board.review_mode = false
 	board._on_state_changed(tm.get_state())
 	await frames(2)
+
+	# ── UiAnim 打断安全：连续触发同一种动画后，节点必须回到基态而不是停在中间态 ──
+	# 真实场景：连买两张卡，同一个资源标签连续泛红；旧实现会把"红的中间态"当成原色，之后一直红着。
+	var probe := Label.new()
+	probe.text = "probe"
+	probe.modulate = Color(1, 1, 1, 1)
+	hand.add_child(probe)
+	var probe_pos: Vector2 = probe.position
+	var red := Color(1.0, 0.55, 0.55)
+	for _i in range(3):
+		UiAnim.tint(probe, red, 0.5)
+		await frames(6)
+	await frames(60)
+	check("染色被打断后仍回到原色", probe.modulate.r > 0.99 and probe.modulate.g > 0.99 and probe.modulate.b > 0.99,
+		str(probe.modulate))
+	for _i in range(2):
+		UiAnim.pop(probe, 1.3, 0.3)
+		await frames(4)
+	await frames(45)
+	check("弹动被打断后 scale 回 1", probe.scale.distance_to(Vector2.ONE) < 0.01, str(probe.scale))
+	for _i in range(2):
+		UiAnim.shake(probe, 6.0, 0.26)
+		await frames(4)
+	await frames(40)
+	check("抖动被打断后回到原位", probe.position.distance_to(probe_pos) < 0.5,
+		"pos=%s base=%s" % [str(probe.position), str(probe_pos)])
+	probe.queue_free()
 
 	# 战线占领度标签：变化时弹动 + 飘增量（直接注入前后状态，与对局解耦）
 	var fc_prev: BattleState = tm.get_state().duplicate(true)
